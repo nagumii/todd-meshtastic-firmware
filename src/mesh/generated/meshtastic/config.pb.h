@@ -182,6 +182,19 @@ typedef enum _meshtastic_Config_DisplayConfig_DisplayMode {
     meshtastic_Config_DisplayConfig_DisplayMode_COLOR = 3
 } meshtastic_Config_DisplayConfig_DisplayMode;
 
+typedef enum _meshtastic_Config_DisplayConfig_EInkScreensaver {
+    /* Label overtop existing screen image */
+    meshtastic_Config_DisplayConfig_EInkScreensaver_OVERLAY = 0,
+    /* Meshtastic logo, node id */
+    meshtastic_Config_DisplayConfig_EInkScreensaver_LOGO = 1,
+    /* Clear screen */
+    meshtastic_Config_DisplayConfig_EInkScreensaver_BLANK = 2,
+    /* No change from existing screen image */
+    meshtastic_Config_DisplayConfig_EInkScreensaver_NONE = 3,
+    /* A variant-specific custom screensaver, if one exists */
+    meshtastic_Config_DisplayConfig_EInkScreensaver_CUSTOM = 4
+} meshtastic_Config_DisplayConfig_EInkScreensaver;
+
 typedef enum _meshtastic_Config_LoRaConfig_RegionCode {
     /* Region is not set */
     meshtastic_Config_LoRaConfig_RegionCode_UNSET = 0,
@@ -414,6 +427,11 @@ typedef struct _meshtastic_Config_DisplayConfig {
     bool heading_bold;
     /* Should we wake the screen up on accelerometer detected motion or tap */
     bool wake_on_tap_or_motion;
+    /* What should E-Ink display do when display powers off */
+    meshtastic_Config_DisplayConfig_EInkScreensaver eink_screensaver;
+    /* Is the E-Ink display used in direct sunlight?
+ Use full-refresh (more robust) */
+    bool eink_direct_sun;
 } meshtastic_Config_DisplayConfig;
 
 /* Lora Config */
@@ -548,6 +566,10 @@ extern "C" {
 #define _meshtastic_Config_DisplayConfig_DisplayMode_MAX meshtastic_Config_DisplayConfig_DisplayMode_COLOR
 #define _meshtastic_Config_DisplayConfig_DisplayMode_ARRAYSIZE ((meshtastic_Config_DisplayConfig_DisplayMode)(meshtastic_Config_DisplayConfig_DisplayMode_COLOR+1))
 
+#define _meshtastic_Config_DisplayConfig_EInkScreensaver_MIN meshtastic_Config_DisplayConfig_EInkScreensaver_OVERLAY
+#define _meshtastic_Config_DisplayConfig_EInkScreensaver_MAX meshtastic_Config_DisplayConfig_EInkScreensaver_CUSTOM
+#define _meshtastic_Config_DisplayConfig_EInkScreensaver_ARRAYSIZE ((meshtastic_Config_DisplayConfig_EInkScreensaver)(meshtastic_Config_DisplayConfig_EInkScreensaver_CUSTOM+1))
+
 #define _meshtastic_Config_LoRaConfig_RegionCode_MIN meshtastic_Config_LoRaConfig_RegionCode_UNSET
 #define _meshtastic_Config_LoRaConfig_RegionCode_MAX meshtastic_Config_LoRaConfig_RegionCode_SG_923
 #define _meshtastic_Config_LoRaConfig_RegionCode_ARRAYSIZE ((meshtastic_Config_LoRaConfig_RegionCode)(meshtastic_Config_LoRaConfig_RegionCode_SG_923+1))
@@ -574,6 +596,7 @@ extern "C" {
 #define meshtastic_Config_DisplayConfig_units_ENUMTYPE meshtastic_Config_DisplayConfig_DisplayUnits
 #define meshtastic_Config_DisplayConfig_oled_ENUMTYPE meshtastic_Config_DisplayConfig_OledType
 #define meshtastic_Config_DisplayConfig_displaymode_ENUMTYPE meshtastic_Config_DisplayConfig_DisplayMode
+#define meshtastic_Config_DisplayConfig_eink_screensaver_ENUMTYPE meshtastic_Config_DisplayConfig_EInkScreensaver
 
 #define meshtastic_Config_LoRaConfig_modem_preset_ENUMTYPE meshtastic_Config_LoRaConfig_ModemPreset
 #define meshtastic_Config_LoRaConfig_region_ENUMTYPE meshtastic_Config_LoRaConfig_RegionCode
@@ -588,7 +611,7 @@ extern "C" {
 #define meshtastic_Config_PowerConfig_init_default {0, 0, 0, 0, 0, 0, 0, 0}
 #define meshtastic_Config_NetworkConfig_init_default {0, "", "", "", 0, _meshtastic_Config_NetworkConfig_AddressMode_MIN, false, meshtastic_Config_NetworkConfig_IpV4Config_init_default, ""}
 #define meshtastic_Config_NetworkConfig_IpV4Config_init_default {0, 0, 0, 0}
-#define meshtastic_Config_DisplayConfig_init_default {0, _meshtastic_Config_DisplayConfig_GpsCoordinateFormat_MIN, 0, 0, 0, _meshtastic_Config_DisplayConfig_DisplayUnits_MIN, _meshtastic_Config_DisplayConfig_OledType_MIN, _meshtastic_Config_DisplayConfig_DisplayMode_MIN, 0, 0}
+#define meshtastic_Config_DisplayConfig_init_default {0, _meshtastic_Config_DisplayConfig_GpsCoordinateFormat_MIN, 0, 0, 0, _meshtastic_Config_DisplayConfig_DisplayUnits_MIN, _meshtastic_Config_DisplayConfig_OledType_MIN, _meshtastic_Config_DisplayConfig_DisplayMode_MIN, 0, 0, _meshtastic_Config_DisplayConfig_EInkScreensaver_MIN, 0}
 #define meshtastic_Config_LoRaConfig_init_default {0, _meshtastic_Config_LoRaConfig_ModemPreset_MIN, 0, 0, 0, 0, _meshtastic_Config_LoRaConfig_RegionCode_MIN, 0, 0, 0, 0, 0, 0, 0, 0, {0, 0, 0}, 0}
 #define meshtastic_Config_BluetoothConfig_init_default {0, _meshtastic_Config_BluetoothConfig_PairingMode_MIN, 0}
 #define meshtastic_Config_init_zero              {0, {meshtastic_Config_DeviceConfig_init_zero}}
@@ -597,7 +620,7 @@ extern "C" {
 #define meshtastic_Config_PowerConfig_init_zero  {0, 0, 0, 0, 0, 0, 0, 0}
 #define meshtastic_Config_NetworkConfig_init_zero {0, "", "", "", 0, _meshtastic_Config_NetworkConfig_AddressMode_MIN, false, meshtastic_Config_NetworkConfig_IpV4Config_init_zero, ""}
 #define meshtastic_Config_NetworkConfig_IpV4Config_init_zero {0, 0, 0, 0}
-#define meshtastic_Config_DisplayConfig_init_zero {0, _meshtastic_Config_DisplayConfig_GpsCoordinateFormat_MIN, 0, 0, 0, _meshtastic_Config_DisplayConfig_DisplayUnits_MIN, _meshtastic_Config_DisplayConfig_OledType_MIN, _meshtastic_Config_DisplayConfig_DisplayMode_MIN, 0, 0}
+#define meshtastic_Config_DisplayConfig_init_zero {0, _meshtastic_Config_DisplayConfig_GpsCoordinateFormat_MIN, 0, 0, 0, _meshtastic_Config_DisplayConfig_DisplayUnits_MIN, _meshtastic_Config_DisplayConfig_OledType_MIN, _meshtastic_Config_DisplayConfig_DisplayMode_MIN, 0, 0, _meshtastic_Config_DisplayConfig_EInkScreensaver_MIN, 0}
 #define meshtastic_Config_LoRaConfig_init_zero   {0, _meshtastic_Config_LoRaConfig_ModemPreset_MIN, 0, 0, 0, 0, _meshtastic_Config_LoRaConfig_RegionCode_MIN, 0, 0, 0, 0, 0, 0, 0, 0, {0, 0, 0}, 0}
 #define meshtastic_Config_BluetoothConfig_init_zero {0, _meshtastic_Config_BluetoothConfig_PairingMode_MIN, 0}
 
@@ -655,6 +678,8 @@ extern "C" {
 #define meshtastic_Config_DisplayConfig_displaymode_tag 8
 #define meshtastic_Config_DisplayConfig_heading_bold_tag 9
 #define meshtastic_Config_DisplayConfig_wake_on_tap_or_motion_tag 10
+#define meshtastic_Config_DisplayConfig_eink_screensaver_tag 11
+#define meshtastic_Config_DisplayConfig_eink_direct_sun_tag 12
 #define meshtastic_Config_LoRaConfig_use_preset_tag 1
 #define meshtastic_Config_LoRaConfig_modem_preset_tag 2
 #define meshtastic_Config_LoRaConfig_bandwidth_tag 3
@@ -775,7 +800,9 @@ X(a, STATIC,   SINGULAR, UENUM,    units,             6) \
 X(a, STATIC,   SINGULAR, UENUM,    oled,              7) \
 X(a, STATIC,   SINGULAR, UENUM,    displaymode,       8) \
 X(a, STATIC,   SINGULAR, BOOL,     heading_bold,      9) \
-X(a, STATIC,   SINGULAR, BOOL,     wake_on_tap_or_motion,  10)
+X(a, STATIC,   SINGULAR, BOOL,     wake_on_tap_or_motion,  10) \
+X(a, STATIC,   SINGULAR, UENUM,    eink_screensaver,  11) \
+X(a, STATIC,   SINGULAR, BOOL,     eink_direct_sun,  12)
 #define meshtastic_Config_DisplayConfig_CALLBACK NULL
 #define meshtastic_Config_DisplayConfig_DEFAULT NULL
 
@@ -830,7 +857,7 @@ extern const pb_msgdesc_t meshtastic_Config_BluetoothConfig_msg;
 /* Maximum encoded size of messages (where known) */
 #define meshtastic_Config_BluetoothConfig_size   10
 #define meshtastic_Config_DeviceConfig_size      32
-#define meshtastic_Config_DisplayConfig_size     28
+#define meshtastic_Config_DisplayConfig_size     32
 #define meshtastic_Config_LoRaConfig_size        80
 #define meshtastic_Config_NetworkConfig_IpV4Config_size 20
 #define meshtastic_Config_NetworkConfig_size     196

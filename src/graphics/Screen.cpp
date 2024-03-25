@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "error.h"
 #include "gps/GeoCoord.h"
 #include "gps/RTC.h"
+#include "graphics/EInkCustomScreensavers.h"
 #include "graphics/ScreenFonts.h"
 #include "graphics/images.h"
 #include "input/TouchScreenImpl1.h"
@@ -270,16 +271,83 @@ static void drawDeepSleepScreen(OLEDDisplay *display, OLEDDisplayUiState *state,
 }
 
 /// Used on eink displays when screen turns off for powersaving
-static void drawScreensaver(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
+static void drawScreensaverLogo(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
 {
-    LOG_DEBUG("Drawing screensaver\n");
-
-    // Next frame should use full-refresh, and block while running, else device will sleep before async callback
+    LOG_DEBUG("E-Ink Screensaver: LOGO\n");
     EINK_ADD_FRAMEFLAG(display, COSMETIC);
     EINK_ADD_FRAMEFLAG(display, BLOCKING);
 
-    drawIconScreen("Screen Paused", display, state, x, y);
+    // Modified from drawIconScreen()
+
+    // draw centered icon left to right and centered above the one line of app text
+    display->drawXbm(x + (SCREEN_WIDTH - icon_width) / 2, y + (SCREEN_HEIGHT - FONT_HEIGHT_MEDIUM - icon_height) / 2 + 2,
+                     icon_width, icon_height, icon_bits);
+
+    display->setFont(FONT_MEDIUM);
+    display->setTextAlignment(TEXT_ALIGN_LEFT);
+    const char *title = "meshtastic.org";
+    display->drawString(x + getStringCenteredX(title), y + SCREEN_HEIGHT - FONT_HEIGHT_MEDIUM, title);
+    display->setFont(FONT_SMALL);
+
+    // Draw message in upper left
+    display->drawString(x + 0, y + 0, "Screen Paused");
+
+    // Draw short name and node ID
+    const char *shortName = devicestate.owner.short_name;
+    display->drawString(SCREEN_WIDTH - display->getStringWidth(shortName), 0, shortName);
+    display->drawString(SCREEN_WIDTH - display->getStringWidth(ourId), FONT_HEIGHT_SMALL, ourId);
+
+    screen->forceDisplay();
 }
+
+static void drawScreensaverBlank(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
+{
+    LOG_DEBUG("E-Ink Screensaver: BLANK\n");
+    EINK_ADD_FRAMEFLAG(display, COSMETIC);
+    EINK_ADD_FRAMEFLAG(display, BLOCKING);
+    display->clear();
+    screen->forceDisplay();
+}
+
+static void drawScreensaverOverlay(OLEDDisplay *display, OLEDDisplayUiState *state)
+{
+    LOG_DEBUG("E-Ink Screensaver: OVERLAY\n");
+    EINK_ADD_FRAMEFLAG(display, COSMETIC);
+    EINK_ADD_FRAMEFLAG(display, BLOCKING);
+
+    display->setTextAlignment(TEXT_ALIGN_CENTER_BOTH);
+    display->setFont(FONT_SMALL);
+    const char *message = "Screen Paused";
+    const uint16_t text_width = display->getStringWidth(message, strlen(message));
+    const uint16_t origin_x = display->width() / 2;
+    const uint16_t origin_y = display->height() / 2;
+
+    const uint16_t box_margin = 5;
+    const uint16_t box_width = text_width + (2 * box_margin);
+    const uint16_t box_height = FONT_HEIGHT_SMALL + (2 * box_margin);
+    const uint16_t box_left = origin_x - (box_width / 2);
+    const uint16_t box_top = origin_y - (box_height / 2);
+    display->setColor(EINK_WHITE);
+    display->fillRect(box_left, box_top, box_width, box_height);
+
+    display->setColor(EINK_BLACK);
+    display->drawRect(box_left, box_top, box_width, box_height);
+    display->drawString(origin_x, origin_y, message);
+
+    // forceDisplay() won't help here, this is an overlay, not a frame
+    // Instead, setScreensaverFrames() temporarily boosts the framerate to ensure that ui->tick() runs
+}
+
+#ifdef EINK_CUSTOM_SCREENSAVER
+static void drawScreensaverCustom(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
+{
+    LOG_DEBUG("E-Ink Screensaver: CUSTOM (" EINK_SCREENSAVER_TOSTRING(EINK_CUSTOM_SCREENSAVER) ")\n"); // Log method name
+    EINK_ADD_FRAMEFLAG(display, COSMETIC);
+    EINK_ADD_FRAMEFLAG(display, BLOCKING);
+    einkCustomScreensavers::EINK_CUSTOM_SCREENSAVER(display);
+    screen->forceDisplay();
+}
+#endif
 #endif
 
 static void drawModuleFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
@@ -1302,19 +1370,58 @@ void Screen::setWelcomeFrames()
 void Screen::setScreensaverFrames(FrameCallback einkScreensaver)
 {
     static FrameCallback screensaverFrame;
+    static OverlayCallback screensaverOverlay;
 
-    // Custom screensaver frame passed as argument, or default screensaver
-    if (einkScreensaver != NULL)
+    // One-off screensaver frame passed as argument
+    if (einkScreensaver != NULL) {
         screensaverFrame = einkScreensaver;
-    else
-        screensaverFrame = drawScreensaver;
+        ui->setFrames(&screensaverFrame, 1);
+    }
+    // Else: behavior set by user in protobuf
+    else {
+        switch (config.display.eink_screensaver) {
+        case meshtastic_Config_DisplayConfig_EInkScreensaver_OVERLAY:
+            // Note: overlay, not frame
+            screensaverOverlay = drawScreensaverOverlay;
+            ui->setOverlays(&screensaverOverlay, 1);
+            ui->setTargetFPS(100); // Temporarily boost framerate, so overlay will be drawn
+            delay(50);
+            break;
 
-    ui->setFrames(&screensaverFrame, 1);
+        case meshtastic_Config_DisplayConfig_EInkScreensaver_LOGO:
+            screensaverFrame = drawScreensaverLogo;
+            ui->setFrames(&screensaverFrame, 1);
+            break;
+
+        case meshtastic_Config_DisplayConfig_EInkScreensaver_BLANK:
+            screensaverFrame = drawScreensaverBlank;
+            ui->setFrames(&screensaverFrame, 1);
+            break;
+
+#ifdef EINK_CUSTOM_SCREENSAVER
+        case meshtastic_Config_DisplayConfig_EInkScreensaver_CUSTOM:
+            screensaverFrame = drawScreensaverCustom;
+            ui->setFrames(&screensaverFrame, 1);
+            break;
+#else
+        case meshtastic_Config_DisplayConfig_EInkScreensaver_CUSTOM:
+            LOG_WARN("CUSTOM screensaver selected, but not defined for this variant\n");
+            break;
+#endif
+        case meshtastic_Config_DisplayConfig_EInkScreensaver_NONE:
+        default:
+            LOG_DEBUG("EInkScreensaver: NONE");
+            break;
+        }
+    }
+
     ui->update();
+    ui->setTargetFPS(targetFramerate); // Restore. (boosted temporarily to ensure OVERLAY draws)
 
     // Prepare now for next frame, shown when display wakes
     EINK_ADD_FRAMEFLAG(dispdev, COSMETIC); // Will use full-refresh
-    setFrames();                           // Return to normal display updates
+    ui->setOverlays(NULL, 0);
+    setFrames(); // Return to normal display updates
 }
 #endif
 
