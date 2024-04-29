@@ -1,9 +1,23 @@
 #include "AutoresponderModule.h"
 #include "MeshService.h"
 #include "configuration.h"
-#include "main.h"
+#include "mesh/generated/meshtastic/autoresponder.pb.h"
 
 #include <assert.h>
+
+// The separate config file for this module (stores strings)
+static const char *autoresponderConfigFile = "/prefs/autoresponderConf.proto"; // Location of the file
+meshtastic_AutoresponderConfig autoresponderConfig;                            // Holds config file during runtime
+
+// Constructor
+AutoresponderModule::AutoresponderModule() : SinglePortModule("autoresponder", meshtastic_PortNum_AUTORESPONDER_APP)
+{
+    if (moduleConfig.autoresponder.enabled) {
+        LOG_DEBUG("Autoresponder: enabled\n");
+        loadProtoForModule();
+    } else
+        LOG_DEBUG("Autoresponder: not enabled\n");
+}
 
 // Do we want to process this packet with handleReceived()?
 bool AutoresponderModule::wantPacket(const meshtastic_MeshPacket *p)
@@ -89,4 +103,77 @@ void AutoresponderModule::sendText(NodeNum dest, ChannelIndex channel, const cha
 
     // Store the ID of this packet, to check for the ACK later
     outgoingId = p->id;
+}
+
+// Load the bulk config (separate file, not config.proto)
+void AutoresponderModule::loadProtoForModule()
+{
+    // Attempt to load the proto file into RAM
+    LoadFileResult result;
+    result = nodeDB->loadProto(autoresponderConfigFile, meshtastic_AutoresponderConfig_size,
+                               sizeof(meshtastic_AutoresponderConfig), &meshtastic_AutoresponderConfig_msg, &autoresponderConfig);
+
+    // If load failed, set default values for the config in RAM
+    if (result != LoadFileResult::SUCCESS)
+        setDefaultConfig();
+
+    // Testing only
+    // ======================
+    for (pb_size_t i = 0; i < autoresponderConfig.permitted_nodes_count; i++) {
+        LOG_DEBUG("permitted_nodes[%hu]=%u\n", i, (unsigned int)autoresponderConfig.permitted_nodes[i]);
+    }
+
+    if (isNodePermitted(12345678))
+        LOG_DEBUG("permitted 12345678\n");
+    else
+        LOG_DEBUG("not permitted 12345678\n");
+
+    if (isNodePermitted(12345679))
+        LOG_DEBUG("permitted 12345679\n");
+    else
+        LOG_DEBUG("not permitted 12345679\n");
+    // =======================
+}
+
+void AutoresponderModule::setDefaultConfig()
+{
+    LOG_INFO("%s not loaded. Autoresponder using default config\n", autoresponderConfigFile);
+    memset(autoresponderConfig.response_text, 0,
+           sizeof(autoresponderConfig.response_text)); // Default response text
+    memset(autoresponderConfig.permitted_nodes, 0,
+           sizeof(autoresponderConfig.permitted_nodes)); // Empty "permitted nodes" array
+
+    // Testing only
+    // =============
+    autoresponderConfig.permitted_nodes[0] = 12345678;
+    autoresponderConfig.permitted_nodes[1] = 99999999;
+    autoresponderConfig.permitted_nodes_count = 2;
+    saveProtoForModule();
+    // =============
+}
+
+void AutoresponderModule::saveProtoForModule()
+{
+
+#ifdef FS
+    FS.mkdir("/prefs");
+#endif
+
+    // Attempt to save the module's separate config file
+    if (!nodeDB->saveProto(autoresponderConfigFile, meshtastic_AutoresponderConfig_size, &meshtastic_AutoresponderConfig_msg,
+                           &autoresponderConfig))
+        LOG_ERROR("Couldn't save %s\n", autoresponderConfigFile);
+
+    return;
+}
+
+bool AutoresponderModule::isNodePermitted(NodeNum node)
+{
+    for (pb_size_t i = 0; i < autoresponderConfig.permitted_nodes_count; i++) {
+        if (autoresponderConfig.permitted_nodes[i] == node)
+            return true;
+    }
+
+    // Not found in permitted_nodes[]
+    return false;
 }

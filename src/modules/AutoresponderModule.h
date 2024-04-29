@@ -1,10 +1,11 @@
 #pragma once
 #include "SinglePortModule.h"
+#include <unordered_set>
 
 class AutoresponderModule : public SinglePortModule
 {
   public:
-    AutoresponderModule() : SinglePortModule("autoresponder", meshtastic_PortNum_AUTORESPONDER_APP) {}
+    AutoresponderModule();
 
   protected:
     virtual bool wantPacket(const meshtastic_MeshPacket *p) override;
@@ -15,6 +16,18 @@ class AutoresponderModule : public SinglePortModule
 
     void sendText(NodeNum dest, ChannelIndex channel, const char *message, bool wantReplies); // Send a text message over the mesh
 
-    bool waitingForAck = false; // If true, we temporarily want routing packets, to check for ACKs
-    PacketId outgoingId;        // ID of our latest outgoing auto-responce, to check for ACK
+    void loadProtoForModule();
+    void saveProtoForModule();
+    void setDefaultConfig();
+
+    void handleGetConfMessage(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response) {}
+    void handleGetConfWhitelist(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response) {}
+    void handleSetConfMessage(const char *message) {}
+    void handleSetConfWhitelist(const char *permittedNodesRaw) {}
+
+    bool isNodePermitted(NodeNum node);
+
+    bool waitingForAck = false;             // If true, we temporarily want routing packets, to check for ACKs
+    PacketId outgoingId;                    // ID of our latest outgoing auto-responce, to check for ACK
+    std::unordered_set<uint32_t> heardFrom; // Node numbers which have DM'd us
 };
