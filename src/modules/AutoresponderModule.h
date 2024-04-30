@@ -10,6 +10,9 @@ class AutoresponderModule : public SinglePortModule
   protected:
     virtual bool wantPacket(const meshtastic_MeshPacket *p) override;
     virtual ProcessMessage handleReceived(const meshtastic_MeshPacket &mp) override;
+    virtual AdminMessageHandleResult handleAdminMessageForModule(const meshtastic_MeshPacket &mp,
+                                                                 meshtastic_AdminMessage *request,
+                                                                 meshtastic_AdminMessage *response) override;
 
     void checkIfDM(const meshtastic_MeshPacket &mp);   // Check if message was a DM for us, then reply if needed
     void checkForAck(const meshtastic_MeshPacket &mp); // Check if an outgoing message was received
@@ -20,10 +23,10 @@ class AutoresponderModule : public SinglePortModule
     void saveProtoForModule();
     void setDefaultConfig();
 
-    void handleGetConfMessage(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response) {}
-    void handleGetConfWhitelist(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response) {}
-    void handleSetConfMessage(const char *message) {}
-    void handleSetConfWhitelist(const char *permittedNodesRaw) {}
+    void handleGetConfigMessage(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response);
+    void handleGetConfigPermittedNodes(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response);
+    void handleSetConfigMessage(const char *message);
+    void handleSetConfigPermittedNodes(const char *rawString);
 
     bool isNodePermitted(NodeNum node);
 

@@ -163,6 +163,18 @@ typedef struct _meshtastic_AdminMessage {
         meshtastic_Position set_fixed_position;
         /* Clear fixed position coordinates and then set position.fixed_position = false */
         bool remove_fixed_position;
+        /* Get the text for the autoresponder module in the response to this message. */
+        bool get_autoresponder_message_request;
+        /* Get the text for the autoresponder module in this response. */
+        char get_autoresponder_message_response[201];
+        /* Set the text for the autoresponder module. */
+        char set_autoresponder_message[201];
+        /* In response to this message, get the list of nodes to which the autoresponder will reply */
+        bool get_autoresponder_permittednodes_request;
+        /* In this response, get the list of nodes to which the autoresponder will reply */
+        char get_autoresponder_permittednodes_response[201];
+        /* Set the list of nodes to which the autoresponder module will reply */
+        char set_autoresponder_permittednodes[201];
         /* Begins an edit transaction for config, module config, owner, and channel settings changes
      This will delay the standard *implicit* save to the file system and subsequent reboot behavior until committed (commit_edit_settings) */
         bool begin_edit_settings;
@@ -251,6 +263,12 @@ extern "C" {
 #define meshtastic_AdminMessage_remove_favorite_node_tag 40
 #define meshtastic_AdminMessage_set_fixed_position_tag 41
 #define meshtastic_AdminMessage_remove_fixed_position_tag 42
+#define meshtastic_AdminMessage_get_autoresponder_message_request_tag 43
+#define meshtastic_AdminMessage_get_autoresponder_message_response_tag 44
+#define meshtastic_AdminMessage_set_autoresponder_message_tag 45
+#define meshtastic_AdminMessage_get_autoresponder_permittednodes_request_tag 46
+#define meshtastic_AdminMessage_get_autoresponder_permittednodes_response_tag 47
+#define meshtastic_AdminMessage_set_autoresponder_permittednodes_tag 48
 #define meshtastic_AdminMessage_begin_edit_settings_tag 64
 #define meshtastic_AdminMessage_commit_edit_settings_tag 65
 #define meshtastic_AdminMessage_reboot_ota_seconds_tag 95
@@ -294,6 +312,12 @@ X(a, STATIC,   ONEOF,    UINT32,   (payload_variant,set_favorite_node,set_favori
 X(a, STATIC,   ONEOF,    UINT32,   (payload_variant,remove_favorite_node,remove_favorite_node),  40) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload_variant,set_fixed_position,set_fixed_position),  41) \
 X(a, STATIC,   ONEOF,    BOOL,     (payload_variant,remove_fixed_position,remove_fixed_position),  42) \
+X(a, STATIC,   ONEOF,    BOOL,     (payload_variant,get_autoresponder_message_request,get_autoresponder_message_request),  43) \
+X(a, STATIC,   ONEOF,    STRING,   (payload_variant,get_autoresponder_message_response,get_autoresponder_message_response),  44) \
+X(a, STATIC,   ONEOF,    STRING,   (payload_variant,set_autoresponder_message,set_autoresponder_message),  45) \
+X(a, STATIC,   ONEOF,    BOOL,     (payload_variant,get_autoresponder_permittednodes_request,get_autoresponder_permittednodes_request),  46) \
+X(a, STATIC,   ONEOF,    STRING,   (payload_variant,get_autoresponder_permittednodes_response,get_autoresponder_permittednodes_response),  47) \
+X(a, STATIC,   ONEOF,    STRING,   (payload_variant,set_autoresponder_permittednodes,set_autoresponder_permittednodes),  48) \
 X(a, STATIC,   ONEOF,    BOOL,     (payload_variant,begin_edit_settings,begin_edit_settings),  64) \
 X(a, STATIC,   ONEOF,    BOOL,     (payload_variant,commit_edit_settings,commit_edit_settings),  65) \
 X(a, STATIC,   ONEOF,    INT32,    (payload_variant,reboot_ota_seconds,reboot_ota_seconds),  95) \

@@ -15,6 +15,7 @@ AutoresponderModule::AutoresponderModule() : SinglePortModule("autoresponder", m
     if (moduleConfig.autoresponder.enabled) {
         LOG_DEBUG("Autoresponder: enabled\n");
         loadProtoForModule();
+        LOG_DEBUG("Autoresponder: message is \"%s\"\n", autoresponderConfig.response_text);
     } else
         LOG_DEBUG("Autoresponder: not enabled\n");
 }
@@ -49,6 +50,138 @@ ProcessMessage AutoresponderModule::handleReceived(const meshtastic_MeshPacket &
     }
 
     return ProcessMessage::CONTINUE; // Let others look at this message also if they want
+}
+
+// Handle admin messages (getting and setting config our separate settings file)
+AdminMessageHandleResult AutoresponderModule::handleAdminMessageForModule(const meshtastic_MeshPacket &mp,
+                                                                          meshtastic_AdminMessage *request,
+                                                                          meshtastic_AdminMessage *response)
+{
+    AdminMessageHandleResult result;
+
+    switch (request->which_payload_variant) {
+    case meshtastic_AdminMessage_get_autoresponder_message_request_tag:
+        LOG_DEBUG("Client is getting the autoresponder message\n");
+        this->handleGetConfigMessage(mp, response);
+        result = AdminMessageHandleResult::HANDLED_WITH_RESPONSE;
+        break;
+
+    case meshtastic_AdminMessage_set_autoresponder_message_tag:
+        LOG_DEBUG("Client is setting the autoresponder message\n");
+        this->handleSetConfigMessage(request->set_autoresponder_message);
+        result = AdminMessageHandleResult::HANDLED;
+        break;
+
+    case meshtastic_AdminMessage_get_autoresponder_permittednodes_request_tag:
+        LOG_DEBUG("Client is getting the autoresponder \"permitted nodes\" list\n");
+        this->handleGetConfigPermittedNodes(mp, response);
+        result = AdminMessageHandleResult::HANDLED_WITH_RESPONSE;
+        break;
+
+    case meshtastic_AdminMessage_set_autoresponder_permittednodes_tag:
+        LOG_DEBUG("Client is setting the autoresponder \"permitted nodes\" list\n");
+        this->handleSetConfigPermittedNodes(request->set_autoresponder_permittednodes);
+        result = AdminMessageHandleResult::HANDLED;
+        break;
+
+    default:
+        result = AdminMessageHandleResult::NOT_HANDLED;
+    }
+
+    return result;
+}
+
+void AutoresponderModule::handleGetConfigMessage(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response)
+{
+    LOG_DEBUG("*** handleGetConfigMessage\n");
+    if (req.decoded.want_response) {
+        // Mark that response packet contains the current message
+        response->which_payload_variant = meshtastic_AdminMessage_get_autoresponder_message_response_tag;
+        // Copy the current message into the response packet
+        strncpy(response->get_autoresponder_message_response, autoresponderConfig.response_text,
+                sizeof(response->get_autoresponder_message_response));
+    }
+}
+
+void AutoresponderModule::handleGetConfigPermittedNodes(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response)
+{
+    LOG_DEBUG("*** handleGetConfiPermittedNodes\n");
+    if (req.decoded.want_response) {
+        // Mark that response packet contains the list of permitted nodes (as a string representation)
+        response->which_payload_variant = meshtastic_AdminMessage_get_autoresponder_permittednodes_response_tag;
+
+        // Convert each permitted NodeNum to a hex string, and add to the response packet
+        strcpy(response->get_autoresponder_permittednodes_response, ""); // Start with an empty string
+
+        for (uint8_t i = 0; i < autoresponderConfig.permitted_nodes_count; i++) {
+            char nodeId[10] = "!00000000";
+            char nodeIdBuilder[9];
+
+            sprintf(nodeIdBuilder, "%X", autoresponderConfig.permitted_nodes[i]);
+
+            uint8_t offset = strlen(nodeId) - strlen(nodeIdBuilder);
+            strcpy(nodeId + offset, nodeIdBuilder);
+            strcat(response->get_autoresponder_permittednodes_response, nodeId);
+
+            // Append a delimiter, if needed
+            if (i < autoresponderConfig.permitted_nodes_count - 1)
+                strcat(response->get_autoresponder_permittednodes_response, ", ");
+        }
+    }
+}
+
+void AutoresponderModule::handleSetConfigMessage(const char *message)
+{
+    LOG_DEBUG("*** handlSetConfigMessage\n");
+    if (*message) {
+        strncpy(autoresponderConfig.response_text, message, sizeof(autoresponderConfig.response_text));
+        this->saveProtoForModule();
+        LOG_DEBUG("Autoresponder: setting message to \"%s\"\n", message);
+    }
+}
+
+// Set the list of "permitted nodes". Decode the raw string into NodeNums, store in protobuf
+void AutoresponderModule::handleSetConfigPermittedNodes(const char *rawString)
+{
+    LOG_DEBUG("*** handlSetConfigPermittedNodes\n");
+    LOG_DEBUG("Autoresponder: got %s\n", rawString);
+    LOG_DEBUG("Autoresponder: parsing NodeIDs: ");
+
+    char nodeIDBuilder[9]{};
+    nodeIDBuilder[8] = '\0';                       // Pre-set the null term.
+    autoresponderConfig.permitted_nodes_count = 0; // Invalidate the previous list of nodes
+    uint8_t n = 0;                                 // Iterator for NodeID builder
+    uint8_t r = 0;                                 // Iterator for rawString
+    uint8_t p = 0;                                 // Iterator for the permitted nodes list (in protobuf)
+    do {
+        // Grab the next character from the raw list
+        static char c;
+        c = tolower(rawString[r]); // hex-strings to lower case
+
+        // If char is 0-9 or a-f
+        if (isdigit(c) || (c >= 'a' && c <= 'f')) {
+            // Add this character to the builder
+            nodeIDBuilder[n] = c;
+            n++;
+
+            // If we've got enough hex-chars for a 32bit number
+            if (n == 8) {
+                autoresponderConfig.permitted_nodes[p] = (uint32_t)std::stoul(nodeIDBuilder, nullptr, 16); // Parse hex string
+                LOG_DEBUG("%s=%zu,", nodeIDBuilder, autoresponderConfig.permitted_nodes[p]);               // Log decoded value
+                // Increment counters (for array in protobufs)
+                autoresponderConfig.permitted_nodes_count++;
+                p++;
+                // Reset iterator (NodeID building)
+                n = 0;
+            }
+        }
+
+        // Increment (raw string input)
+        r++;
+    } while (r < strlen(rawString)); // Stop if we run out of raw string input
+    LOG_DEBUG("\n");                 // Close this log line
+
+    this->saveProtoForModule();
 }
 
 // Check if incoming message is a DM directed at us, then take action
@@ -122,16 +255,6 @@ void AutoresponderModule::loadProtoForModule()
     for (pb_size_t i = 0; i < autoresponderConfig.permitted_nodes_count; i++) {
         LOG_DEBUG("permitted_nodes[%hu]=%u\n", i, (unsigned int)autoresponderConfig.permitted_nodes[i]);
     }
-
-    if (isNodePermitted(12345678))
-        LOG_DEBUG("permitted 12345678\n");
-    else
-        LOG_DEBUG("not permitted 12345678\n");
-
-    if (isNodePermitted(12345679))
-        LOG_DEBUG("permitted 12345679\n");
-    else
-        LOG_DEBUG("not permitted 12345679\n");
     // =======================
 }
 
@@ -148,12 +271,12 @@ void AutoresponderModule::setDefaultConfig()
     autoresponderConfig.permitted_nodes[0] = 12345678;
     autoresponderConfig.permitted_nodes[1] = 99999999;
     autoresponderConfig.permitted_nodes_count = 2;
-    saveProtoForModule();
     // =============
 }
 
 void AutoresponderModule::saveProtoForModule()
 {
+    LOG_DEBUG("Autoresponder: saving config\n");
 
 #ifdef FS
     FS.mkdir("/prefs");
