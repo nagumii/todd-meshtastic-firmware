@@ -5,24 +5,42 @@
 
 #include <assert.h>
 
+static constexpr uint32_t maxInChannelRuntimeMs = 72 * 24 * 60 * 1000UL; // How long before module auto-disables?
+static constexpr uint32_t maxInChannelMs = 10 * 60 * 1000UL;             // Minimum interval between in-channel responses
+static constexpr uint8_t maxResponsesInChannelDaily = 10;                // Max responses per day, in-channel
+
 // The separate config file for this module (stores strings)
 static const char *autoresponderConfigFile = "/prefs/autoresponderConf.proto"; // Location of the file
-meshtastic_AutoresponderConfig autoresponderConfig;                            // Holds config file during runtime
+static meshtastic_AutoresponderConfig autoresponderConfig;                     // Holds config file during runtime
 
 // Constructor
 AutoresponderModule::AutoresponderModule() : SinglePortModule("autoresponder", meshtastic_PortNum_AUTORESPONDER_APP)
 {
-    if (moduleConfig.autoresponder.enabled) {
-        LOG_DEBUG("Autoresponder: enabled\n");
+    if (moduleConfig.autoresponder.enabled_dm || moduleConfig.autoresponder.enabled_in_channel) {
         loadProtoForModule();
-        LOG_DEBUG("Autoresponder: message is \"%s\"\n", autoresponderConfig.response_text);
+
+        // Debug output at boot
+        LOG_INFO("Autoresponder module enabled\n");
+        if (autoresponderConfig.permitted_nodes_count > 0) {
+            LOG_DEBUG("Autoresponder: only responding to node ID ");
+            for (uint8_t i = 0; i < autoresponderConfig.permitted_nodes_count; i++) {
+                LOG_DEBUG("!%0x", autoresponderConfig.permitted_nodes[i]);
+                if (i < autoresponderConfig.permitted_nodes_count - 1)
+                    LOG_DEBUG(", ");
+            }
+            LOG_DEBUG("\n");
+        }
     } else
-        LOG_DEBUG("Autoresponder: not enabled\n");
+        LOG_INFO("Autoresponder module disabled\n");
 }
 
 // Do we want to process this packet with handleReceived()?
 bool AutoresponderModule::wantPacket(const meshtastic_MeshPacket *p)
 {
+    // If module is disabled for both DM and in channel, ignore packets
+    if (!moduleConfig.autoresponder.enabled_dm && !moduleConfig.autoresponder.enabled_in_channel)
+        return false;
+
     // Which port is the packet from
     switch (p->decoded.portnum) {
     case meshtastic_PortNum_TEXT_MESSAGE_APP: // Text messages
@@ -40,7 +58,10 @@ ProcessMessage AutoresponderModule::handleReceived(const meshtastic_MeshPacket &
     // Hand off to relevant methood, basded on port number
     switch (mp.decoded.portnum) {
     case meshtastic_PortNum_TEXT_MESSAGE_APP: // Text message
-        checkIfDM(mp);
+        if (mp.to == myNodeInfo.my_node_num)
+            handleDM(mp);
+        else
+            handleChannel(mp);
         break;
     case meshtastic_PortNum_ROUTING_APP: // Routing (for ACKs)
         checkForAck(mp);
@@ -93,7 +114,6 @@ AdminMessageHandleResult AutoresponderModule::handleAdminMessageForModule(const 
 
 void AutoresponderModule::handleGetConfigMessage(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response)
 {
-    LOG_DEBUG("*** handleGetConfigMessage\n");
     if (req.decoded.want_response) {
         // Mark that response packet contains the current message
         response->which_payload_variant = meshtastic_AdminMessage_get_autoresponder_message_response_tag;
@@ -105,22 +125,16 @@ void AutoresponderModule::handleGetConfigMessage(const meshtastic_MeshPacket &re
 
 void AutoresponderModule::handleGetConfigPermittedNodes(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response)
 {
-    LOG_DEBUG("*** handleGetConfiPermittedNodes\n");
     if (req.decoded.want_response) {
-        // Mark that response packet contains the list of permitted nodes (as a string representation)
+        // Mark that this response packet contains the list of permitted nodes (as a string representation)
         response->which_payload_variant = meshtastic_AdminMessage_get_autoresponder_permittednodes_response_tag;
 
         // Convert each permitted NodeNum to a hex string, and add to the response packet
         strcpy(response->get_autoresponder_permittednodes_response, ""); // Start with an empty string
 
         for (uint8_t i = 0; i < autoresponderConfig.permitted_nodes_count; i++) {
-            char nodeId[10] = "!00000000";
-            char nodeIdBuilder[9];
-
-            sprintf(nodeIdBuilder, "%X", autoresponderConfig.permitted_nodes[i]);
-
-            uint8_t offset = strlen(nodeId) - strlen(nodeIdBuilder);
-            strcpy(nodeId + offset, nodeIdBuilder);
+            char nodeId[10];
+            sprintf(nodeId, "!%0x", autoresponderConfig.permitted_nodes[i]);
             strcat(response->get_autoresponder_permittednodes_response, nodeId);
 
             // Append a delimiter, if needed
@@ -132,7 +146,6 @@ void AutoresponderModule::handleGetConfigPermittedNodes(const meshtastic_MeshPac
 
 void AutoresponderModule::handleSetConfigMessage(const char *message)
 {
-    LOG_DEBUG("*** handlSetConfigMessage\n");
     if (*message) {
         strncpy(autoresponderConfig.response_text, message, sizeof(autoresponderConfig.response_text));
         this->saveProtoForModule();
@@ -143,10 +156,6 @@ void AutoresponderModule::handleSetConfigMessage(const char *message)
 // Set the list of "permitted nodes". Decode the raw string into NodeNums, store in protobuf
 void AutoresponderModule::handleSetConfigPermittedNodes(const char *rawString)
 {
-    LOG_DEBUG("*** handlSetConfigPermittedNodes\n");
-    LOG_DEBUG("Autoresponder: got %s\n", rawString);
-    LOG_DEBUG("Autoresponder: parsing NodeIDs: ");
-
     char nodeIDBuilder[9]{};
     nodeIDBuilder[8] = '\0';                       // Pre-set the null term.
     autoresponderConfig.permitted_nodes_count = 0; // Invalidate the previous list of nodes
@@ -184,21 +193,83 @@ void AutoresponderModule::handleSetConfigPermittedNodes(const char *rawString)
     this->saveProtoForModule();
 }
 
-// Check if incoming message is a DM directed at us, then take action
-void AutoresponderModule::checkIfDM(const meshtastic_MeshPacket &mp)
+// Reply if message meets the criteria for a DM response
+void AutoresponderModule::handleDM(const meshtastic_MeshPacket &mp)
 {
-    // If message was a DM to us
-    if (mp.to == myNodeInfo.my_node_num) {
-        LOG_DEBUG("Autoresponder: sending a reply\n");
-        sendText(mp.from, mp.channel, "Autoresponder sees you!", true);
-        waitingForAck = true;
-    }
+    // Abort if not enabled for DMs
+    if (!moduleConfig.autoresponder.enabled_dm)
+        return;
 
-    // If message was *not* for us
-    else {
-        LOG_DEBUG("Autoresponder: message was not a DM for us. Wanted %zu, but we are %zu\n", mp.to, myNodeInfo.my_node_num);
+    // Abort if we already responded to this node
+    if (heardDM.find(mp.from) != heardDM.end()) { // (Is NodeNum in the set?)
+        LOG_DEBUG("Autoresponder: ignoring DM. Already responded to this node\n");
         return;
     }
+
+    // Abort if "permitted nodes" list used, and sender not found
+    if (!isNodePermitted(mp.from)) {
+        LOG_DEBUG("Autoresponder: ignoring DM. Sender not found in list of permitted nodes\n");
+        return;
+    }
+
+    // Send the auto-response, mark that we're waiting for an ACK
+    LOG_DEBUG("Autoresponder: sending a reply\n");
+    sendText(mp.from, mp.channel, autoresponderConfig.response_text, true);
+    respondingTo = mp.from; // Record the original sender
+    waitingForAck = true;
+    wasDM = true; // Indicate that a successful ACK should add this user to the heardDM set
+}
+
+// Reply if message meets the criteria for in-channel response
+void AutoresponderModule::handleChannel(const meshtastic_MeshPacket &mp)
+{
+    uint32_t now = millis();
+
+    // ABORT if in-channel response is disabled
+    if (!moduleConfig.autoresponder.enabled_in_channel)
+        return;
+
+    // ABORT if not primary channnel
+    if (mp.channel != 0)
+        return;
+
+    // ABORT if recently responded in channel
+    if (now - lastInChannelMs < maxInChannelMs && lastInChannelMs != 0) {
+        LOG_DEBUG("Autoresponder: ignoring channel message, too soon since last response\n");
+        return;
+    }
+
+    // ABORT if we already responded to this node
+    if (heardInChannel.find(mp.from) != heardInChannel.end()) { // (Is NodeNum in set?)
+        LOG_DEBUG("Autoresponder: ignoring channel message, already responded to this node\n");
+        return;
+    }
+
+    // ABORT if "permitted nodes" list used, and sender not found
+    if (!isNodePermitted(mp.from)) {
+        LOG_DEBUG("Autoresponder: ignoring channel message, sender not found in list of permitted nodes\n");
+        return;
+    }
+
+    // ABORT & disable in-channel, if runtime limit exceeded
+    if (now > maxInChannelRuntimeMs) {
+        LOG_DEBUG("Autoresponder: disabling in-channel response; running for too long\n");
+        moduleConfig.autoresponder.enabled_in_channel = false;
+        return;
+    }
+
+    // ABORT if too many in-channel responses today
+    handleDayRollover();
+    if (inChannelResponseCount > maxResponsesInChannelDaily)
+        return;
+
+    // Send the auto-response, mark that we're waiting for an ACK
+    LOG_DEBUG("Autoresponder: sending a reply\n");
+    sendText(NODENUM_BROADCAST, 0, autoresponderConfig.response_text, true); // Respond on primary channel
+    respondingTo = mp.from;                                                  // Record the original sender
+    waitingForAck = true;
+    wasDM = false; // Indicate that a successful ACK should add this user to the heardInChannel set
+    lastInChannelMs = now;
 }
 
 void AutoresponderModule::checkForAck(const meshtastic_MeshPacket &mp)
@@ -215,7 +286,14 @@ void AutoresponderModule::checkForAck(const meshtastic_MeshPacket &mp)
         LOG_DEBUG("Autoresponder: got an ACK for latest message\n");
         waitingForAck = false;
 
-        // -- Mark the node as having seen our message, in nodedb --
+        // Mark that the node saw our message
+        if (wasDM) {
+            heardDM.emplace(respondingTo);
+            LOG_DEBUG("Autoresponder: adding %zu to heardDM set\n", respondingTo);
+        } else {
+            heardInChannel.emplace(respondingTo); // No way of knowing exactly who heard us in channel..
+            LOG_DEBUG("Autoresponder: adding %zu to heardInChannel set\n", respondingTo);
+        }
     }
 }
 
@@ -234,7 +312,7 @@ void AutoresponderModule::sendText(NodeNum dest, ChannelIndex channel, const cha
 
     service.sendToMesh(p, RX_SRC_LOCAL, true);
 
-    // Store the ID of this packet, to check for the ACK later
+    // Store the ID and source of this packet, to check for the ACK later
     outgoingId = p->id;
 }
 
@@ -249,13 +327,6 @@ void AutoresponderModule::loadProtoForModule()
     // If load failed, set default values for the config in RAM
     if (result != LoadFileResult::SUCCESS)
         setDefaultConfig();
-
-    // Testing only
-    // ======================
-    for (pb_size_t i = 0; i < autoresponderConfig.permitted_nodes_count; i++) {
-        LOG_DEBUG("permitted_nodes[%hu]=%u\n", i, (unsigned int)autoresponderConfig.permitted_nodes[i]);
-    }
-    // =======================
 }
 
 void AutoresponderModule::setDefaultConfig()
@@ -265,13 +336,6 @@ void AutoresponderModule::setDefaultConfig()
            sizeof(autoresponderConfig.response_text)); // Default response text
     memset(autoresponderConfig.permitted_nodes, 0,
            sizeof(autoresponderConfig.permitted_nodes)); // Empty "permitted nodes" array
-
-    // Testing only
-    // =============
-    autoresponderConfig.permitted_nodes[0] = 12345678;
-    autoresponderConfig.permitted_nodes[1] = 99999999;
-    autoresponderConfig.permitted_nodes_count = 2;
-    // =============
 }
 
 void AutoresponderModule::saveProtoForModule()
@@ -292,6 +356,11 @@ void AutoresponderModule::saveProtoForModule()
 
 bool AutoresponderModule::isNodePermitted(NodeNum node)
 {
+    // If list empty, all nodes allowed
+    if (autoresponderConfig.permitted_nodes_count == 0)
+        return true;
+
+    // Check to see if node argument is in permitted_nodes[]
     for (pb_size_t i = 0; i < autoresponderConfig.permitted_nodes_count; i++) {
         if (autoresponderConfig.permitted_nodes[i] == node)
             return true;
@@ -299,4 +368,12 @@ bool AutoresponderModule::isNodePermitted(NodeNum node)
 
     // Not found in permitted_nodes[]
     return false;
+}
+
+// If the day has rolled over, reset the "in-channel" message limit
+void AutoresponderModule::handleDayRollover()
+{
+    static constexpr uint32_t MS_IN_DAY = 24 * 60 * 1000UL;
+    if ((millis() / MS_IN_DAY) != (lastInChannelMs / MS_IN_DAY))
+        inChannelResponseCount = 0;
 }
