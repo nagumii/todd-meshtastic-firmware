@@ -63,6 +63,8 @@ typedef enum _meshtastic_HardwareModel {
     meshtastic_HardwareModel_NANO_G2_ULTRA = 18,
     /* LoRAType device: https://loratype.org/ */
     meshtastic_HardwareModel_LORA_TYPE = 19,
+    /* wiphone https://www.wiphone.io/ */
+    meshtastic_HardwareModel_WIPHONE = 20,
     /* B&Q Consulting Station Edition G1: https://uniteng.com/wiki/doku.php?id=meshtastic:station */
     meshtastic_HardwareModel_STATION_G1 = 25,
     /* RAK11310 (RP2040 + SX1262) */

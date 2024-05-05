@@ -361,6 +361,8 @@ typedef struct _meshtastic_ModuleConfig_AutoresponderConfig {
     bool enabled_dm;
     /* Sets whether the module responds to messages in channel */
     bool enabled_in_channel;
+    /* How long will Autoresponder wait before responding again to the same node */
+    uint32_t repeat_hours;
 } meshtastic_ModuleConfig_AutoresponderConfig;
 
 /* A GPIO pin definition for remote hardware module */
@@ -486,7 +488,7 @@ extern "C" {
 #define meshtastic_ModuleConfig_TelemetryConfig_init_default {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define meshtastic_ModuleConfig_CannedMessageConfig_init_default {0, 0, 0, 0, _meshtastic_ModuleConfig_CannedMessageConfig_InputEventChar_MIN, _meshtastic_ModuleConfig_CannedMessageConfig_InputEventChar_MIN, _meshtastic_ModuleConfig_CannedMessageConfig_InputEventChar_MIN, 0, 0, "", 0}
 #define meshtastic_ModuleConfig_AmbientLightingConfig_init_default {0, 0, 0, 0, 0}
-#define meshtastic_ModuleConfig_AutoresponderConfig_init_default {0, 0}
+#define meshtastic_ModuleConfig_AutoresponderConfig_init_default {0, 0, 0}
 #define meshtastic_RemoteHardwarePin_init_default {0, "", _meshtastic_RemoteHardwarePinType_MIN}
 #define meshtastic_ModuleConfig_init_zero        {0, {meshtastic_ModuleConfig_MQTTConfig_init_zero}}
 #define meshtastic_ModuleConfig_MQTTConfig_init_zero {0, "", "", "", 0, 0, 0, "", 0, 0, false, meshtastic_ModuleConfig_MapReportSettings_init_zero}
@@ -503,7 +505,7 @@ extern "C" {
 #define meshtastic_ModuleConfig_TelemetryConfig_init_zero {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define meshtastic_ModuleConfig_CannedMessageConfig_init_zero {0, 0, 0, 0, _meshtastic_ModuleConfig_CannedMessageConfig_InputEventChar_MIN, _meshtastic_ModuleConfig_CannedMessageConfig_InputEventChar_MIN, _meshtastic_ModuleConfig_CannedMessageConfig_InputEventChar_MIN, 0, 0, "", 0}
 #define meshtastic_ModuleConfig_AmbientLightingConfig_init_zero {0, 0, 0, 0, 0}
-#define meshtastic_ModuleConfig_AutoresponderConfig_init_zero {0, 0}
+#define meshtastic_ModuleConfig_AutoresponderConfig_init_zero {0, 0, 0}
 #define meshtastic_RemoteHardwarePin_init_zero   {0, "", _meshtastic_RemoteHardwarePinType_MIN}
 
 /* Field tags (for use in manual encoding/decoding) */
@@ -598,6 +600,7 @@ extern "C" {
 #define meshtastic_ModuleConfig_AmbientLightingConfig_blue_tag 5
 #define meshtastic_ModuleConfig_AutoresponderConfig_enabled_dm_tag 1
 #define meshtastic_ModuleConfig_AutoresponderConfig_enabled_in_channel_tag 2
+#define meshtastic_ModuleConfig_AutoresponderConfig_repeat_hours_tag 3
 #define meshtastic_RemoteHardwarePin_gpio_pin_tag 1
 #define meshtastic_RemoteHardwarePin_name_tag    2
 #define meshtastic_RemoteHardwarePin_type_tag    3
@@ -804,7 +807,8 @@ X(a, STATIC,   SINGULAR, UINT32,   blue,              5)
 
 #define meshtastic_ModuleConfig_AutoresponderConfig_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, BOOL,     enabled_dm,        1) \
-X(a, STATIC,   SINGULAR, BOOL,     enabled_in_channel,   2)
+X(a, STATIC,   SINGULAR, BOOL,     enabled_in_channel,   2) \
+X(a, STATIC,   SINGULAR, FIXED32,  repeat_hours,      3)
 #define meshtastic_ModuleConfig_AutoresponderConfig_CALLBACK NULL
 #define meshtastic_ModuleConfig_AutoresponderConfig_DEFAULT NULL
 
@@ -856,7 +860,7 @@ extern const pb_msgdesc_t meshtastic_RemoteHardwarePin_msg;
 #define MESHTASTIC_MESHTASTIC_MODULE_CONFIG_PB_H_MAX_SIZE meshtastic_ModuleConfig_size
 #define meshtastic_ModuleConfig_AmbientLightingConfig_size 14
 #define meshtastic_ModuleConfig_AudioConfig_size 19
-#define meshtastic_ModuleConfig_AutoresponderConfig_size 4
+#define meshtastic_ModuleConfig_AutoresponderConfig_size 9
 #define meshtastic_ModuleConfig_CannedMessageConfig_size 49
 #define meshtastic_ModuleConfig_DetectionSensorConfig_size 44
 #define meshtastic_ModuleConfig_ExternalNotificationConfig_size 42

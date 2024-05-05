@@ -12,6 +12,9 @@
 /* Struct definitions */
 /* Autoresponder module configuration. */
 typedef struct _meshtastic_AutoresponderConfig {
+    /* How many times has the device booted since enabled in-channel
+ Prevents a frequently rebooting node from bypassing rate limits indefinitely */
+    uint32_t bootcount_since_enabled_in_channel;
     /* Predefined message, to be sent as an auto-response */
     char response_text[201];
     /* Nodes to which we should respond */
@@ -25,17 +28,19 @@ extern "C" {
 #endif
 
 /* Initializer values for message structs */
-#define meshtastic_AutoresponderConfig_init_default {"", 0, {0, 0, 0, 0, 0, 0, 0, 0}}
-#define meshtastic_AutoresponderConfig_init_zero {"", 0, {0, 0, 0, 0, 0, 0, 0, 0}}
+#define meshtastic_AutoresponderConfig_init_default {0, "", 0, {0, 0, 0, 0, 0, 0, 0, 0}}
+#define meshtastic_AutoresponderConfig_init_zero {0, "", 0, {0, 0, 0, 0, 0, 0, 0, 0}}
 
 /* Field tags (for use in manual encoding/decoding) */
-#define meshtastic_AutoresponderConfig_response_text_tag 1
-#define meshtastic_AutoresponderConfig_permitted_nodes_tag 2
+#define meshtastic_AutoresponderConfig_bootcount_since_enabled_in_channel_tag 1
+#define meshtastic_AutoresponderConfig_response_text_tag 2
+#define meshtastic_AutoresponderConfig_permitted_nodes_tag 3
 
 /* Struct field encoding specification for nanopb */
 #define meshtastic_AutoresponderConfig_FIELDLIST(X, a) \
-X(a, STATIC,   SINGULAR, STRING,   response_text,     1) \
-X(a, STATIC,   REPEATED, FIXED32,  permitted_nodes,   2)
+X(a, STATIC,   SINGULAR, FIXED32,  bootcount_since_enabled_in_channel,   1) \
+X(a, STATIC,   SINGULAR, STRING,   response_text,     2) \
+X(a, STATIC,   REPEATED, FIXED32,  permitted_nodes,   3)
 #define meshtastic_AutoresponderConfig_CALLBACK NULL
 #define meshtastic_AutoresponderConfig_DEFAULT NULL
 
@@ -46,7 +51,7 @@ extern const pb_msgdesc_t meshtastic_AutoresponderConfig_msg;
 
 /* Maximum encoded size of messages (where known) */
 #define MESHTASTIC_MESHTASTIC_AUTORESPONDER_PB_H_MAX_SIZE meshtastic_AutoresponderConfig_size
-#define meshtastic_AutoresponderConfig_size      243
+#define meshtastic_AutoresponderConfig_size      248
 
 #ifdef __cplusplus
 } /* extern "C" */

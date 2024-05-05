@@ -4,32 +4,54 @@
 #include "configuration.h"
 #include "mesh/generated/meshtastic/autoresponder.pb.h"
 
-static constexpr uint32_t maxInChannelRuntimeMs = 72 * 24 * 60 * 1000UL; // How long before module auto-disables?
-static constexpr uint32_t maxInChannelMs = 10 * 60 * 1000UL;             // Minimum interval between in-channel responses
-static constexpr uint8_t maxResponsesInChannelDaily = 10;                // Max responses per day, in-channel
+static constexpr uint8_t maxResponsesInChannelDaily = 10; // Max responses per day, in-channel
+static constexpr uint8_t maxRuntimeChannelHours = 72;     // How long before module auto-disables in-channel responses?
+static constexpr uint8_t maxBootsInChannel = 10;          // How many boots before module in auto-disabled in-channel?
+static constexpr uint16_t minIntervalChannelMinutes = 2;  // Minimum interval between ANY response in-channel
+static constexpr uint32_t repeatDMMinutes = 2;            // How often to reset DM node list
+
+static constexpr uint16_t limitRepeatPubChanHours = 8;  // Min. config val: how often to reset public channel node list
+static constexpr uint16_t limitRepeatPrivChanHours = 4; // Min. config val: how often to reset private channel node list
+static constexpr uint32_t limitRepeatDMHours = 1;       // Min. config val: how often to reset DM node list
 
 // The separate config file for this module (stores strings)
 static const char *autoresponderConfigFile = "/prefs/autoresponderConf.proto"; // Location of the file
 static meshtastic_AutoresponderConfig autoresponderConfig;                     // Holds config file during runtime
 
 // Constructor
-AutoresponderModule::AutoresponderModule() : MeshModule("autoresponder")
+AutoresponderModule::AutoresponderModule() : MeshModule("Autoresponder"), NotifiedWorkerThread("Autoresponder")
 {
+    // If module is enabled
     if (moduleConfig.autoresponder.enabled_dm || moduleConfig.autoresponder.enabled_in_channel) {
+        // Load the config from flash
         loadProtoForModule();
+
+        // Check if the node has rebooted frequently, in case bypassing rate limits and spamming the mesh
+        bootCounting();
+
+        // Begin periodically clearing the list of heard nodes (allow repeats)
+        clearHeardInDM();
+        clearHeardInChannel();
+        clearDailyLimits();
+
+        // Set a timer to disable in-channel responses after maxRuntimeChannelHours
+        notifyLater(maxRuntimeChannelHours * MS_IN_MINUTE, DUE_DISABLE_IN_CHANNEL, false);
 
         // Debug output at boot
         LOG_INFO("Autoresponder module enabled\n");
         if (autoresponderConfig.permitted_nodes_count > 0) {
-            LOG_DEBUG("Autoresponder: only responding to node ID ");
+            LOG_INFO("Autoresponder: only responding to node ID ");
             for (uint8_t i = 0; i < autoresponderConfig.permitted_nodes_count; i++) {
-                LOG_DEBUG("!%0x", autoresponderConfig.permitted_nodes[i]);
+                LOG_INFO("!%0x", autoresponderConfig.permitted_nodes[i]);
                 if (i < autoresponderConfig.permitted_nodes_count - 1)
                     LOG_DEBUG(", ");
             }
             LOG_DEBUG("\n");
         }
-    } else
+    }
+
+    // If module is disabled
+    else
         LOG_INFO("Autoresponder module disabled\n");
 }
 
@@ -147,7 +169,7 @@ void AutoresponderModule::handleSetConfigMessage(const char *message)
 {
     if (*message) {
         strncpy(autoresponderConfig.response_text, message, sizeof(autoresponderConfig.response_text));
-        this->saveProtoForModule();
+        saveProtoForModule();
         LOG_DEBUG("Autoresponder: setting message to \"%s\"\n", message);
     }
 }
@@ -161,6 +183,7 @@ void AutoresponderModule::handleSetConfigPermittedNodes(const char *rawString)
     uint8_t n = 0;                                 // Iterator for NodeID builder
     uint8_t r = 0;                                 // Iterator for rawString
     uint8_t p = 0;                                 // Iterator for the permitted nodes list (in protobuf)
+    LOG_DEBUG("Autoresponder: parsing NodeIDs ");
     do {
         // Grab the next character from the raw list
         static char c;
@@ -189,7 +212,7 @@ void AutoresponderModule::handleSetConfigPermittedNodes(const char *rawString)
     } while (r < strlen(rawString)); // Stop if we run out of raw string input
     LOG_DEBUG("\n");                 // Close this log line
 
-    this->saveProtoForModule();
+    saveProtoForModule();
 }
 
 // Reply if message meets the criteria for a DM response
@@ -200,7 +223,7 @@ void AutoresponderModule::handleDM(const meshtastic_MeshPacket &mp)
         return;
 
     // Abort if we already responded to this node
-    if (heardDM.find(mp.from) != heardDM.end()) { // (Is NodeNum in the set?)
+    if (heardInDM.find(mp.from) != heardInDM.end()) { // (Is NodeNum in the set?)
         LOG_DEBUG("Autoresponder: ignoring DM. Already responded to this node\n");
         return;
     }
@@ -216,14 +239,12 @@ void AutoresponderModule::handleDM(const meshtastic_MeshPacket &mp)
     sendText(mp.from, mp.channel, autoresponderConfig.response_text, true);
     respondingTo = mp.from; // Record the original sender
     waitingForAck = true;
-    wasDM = true; // Indicate that a successful ACK should add this user to the heardDM set
+    wasDM = true; // Indicate that a successful ACK should add this user to the heardInDM set
 }
 
 // Reply if message meets the criteria for in-channel response
 void AutoresponderModule::handleChannel(const meshtastic_MeshPacket &mp)
 {
-    uint32_t now = millis();
-
     // ABORT if in-channel response is disabled
     if (!moduleConfig.autoresponder.enabled_in_channel)
         return;
@@ -232,43 +253,38 @@ void AutoresponderModule::handleChannel(const meshtastic_MeshPacket &mp)
     if (mp.channel != 0)
         return;
 
-    // ABORT if recently responded in channel
-    if (now - lastInChannelMs < maxInChannelMs && lastInChannelMs != 0) {
-        LOG_DEBUG("Autoresponder: ignoring channel message, too soon since last response\n");
+    // ABORT if too many responses in channel within past 24 hours
+    if (responsesInChannelToday > maxResponsesInChannelDaily) {
+        LOG_DEBUG("Autoresponder: too many responses sent in-channel within last 24 hours\n");
+        return;
+    }
+
+    uint32_t now = millis();
+    if (now - prevInChannelResponseMs < (minIntervalChannelMinutes * MS_IN_MINUTE) & prevInChannelResponseMs != 0) {
+        LOG_DEBUG("Autoresponder: too soon for another response in-channel - avoid flooding (lowered for testing)\n");
         return;
     }
 
     // ABORT if we already responded to this node
     if (heardInChannel.find(mp.from) != heardInChannel.end()) { // (Is NodeNum in set?)
-        LOG_DEBUG("Autoresponder: ignoring channel message, already responded to this node\n");
+        LOG_INFO("Autoresponder: ignoring channel message, already responded to this node\n");
         return;
     }
 
     // ABORT if "permitted nodes" list used, and sender not found
     if (!isNodePermitted(mp.from)) {
-        LOG_DEBUG("Autoresponder: ignoring channel message, sender not found in list of permitted nodes\n");
+        LOG_INFO("Autoresponder: ignoring channel message, sender not found in list of permitted nodes\n");
         return;
     }
-
-    // ABORT & disable in-channel, if runtime limit exceeded
-    if (now > maxInChannelRuntimeMs) {
-        LOG_DEBUG("Autoresponder: disabling in-channel response; running for too long\n");
-        moduleConfig.autoresponder.enabled_in_channel = false;
-        return;
-    }
-
-    // ABORT if too many in-channel responses today
-    handleDayRollover();
-    if (inChannelResponseCount > maxResponsesInChannelDaily)
-        return;
 
     // Send the auto-response, mark that we're waiting for an ACK
-    LOG_DEBUG("Autoresponder: sending a reply\n");
+    LOG_INFO("Autoresponder: sending a reply\n");
     sendText(NODENUM_BROADCAST, 0, autoresponderConfig.response_text, true); // Respond on primary channel
     respondingTo = mp.from;                                                  // Record the original sender
-    waitingForAck = true;
-    wasDM = false; // Indicate that a successful ACK should add this user to the heardInChannel set
-    lastInChannelMs = now;
+    responsesInChannelToday++;                                               // Increment "overall" in-channel message count
+    prevInChannelResponseMs = now;                                           // Record time for "overall" in-channel rate limit
+    waitingForAck = true;                                                    // Start listening for an ACK
+    wasDM = false; // Indicate that a successful ACK should add this user to the heardInChannel list
 }
 
 void AutoresponderModule::checkForAck(const meshtastic_MeshPacket &mp)
@@ -287,8 +303,8 @@ void AutoresponderModule::checkForAck(const meshtastic_MeshPacket &mp)
 
         // Mark that the node saw our message
         if (wasDM) {
-            heardDM.emplace(respondingTo);
-            LOG_DEBUG("Autoresponder: adding %zu to heardDM set\n", respondingTo);
+            heardInDM.emplace(respondingTo);
+            LOG_DEBUG("Autoresponder: adding %zu to heardInDM set\n", respondingTo);
         } else {
             heardInChannel.emplace(respondingTo); // No way of knowing exactly who heard us in channel..
             LOG_DEBUG("Autoresponder: adding %zu to heardInChannel set\n", respondingTo);
@@ -307,7 +323,7 @@ void AutoresponderModule::sendText(NodeNum dest, ChannelIndex channel, const cha
     p->decoded.portnum = meshtastic_PortNum_TEXT_MESSAGE_APP;
     memcpy(p->decoded.payload.bytes, message, p->decoded.payload.size);
 
-    LOG_INFO("Sending message id=%d, dest=%x, msg=%.*s\n", p->id, p->to, p->decoded.payload.size, p->decoded.payload.bytes);
+    LOG_DEBUG("Sending message id=%d, dest=%x, msg=%.*s\n", p->id, p->to, p->decoded.payload.size, p->decoded.payload.bytes);
 
     service.sendToMesh(p, RX_SRC_LOCAL, true);
 
@@ -335,11 +351,12 @@ void AutoresponderModule::setDefaultConfig()
            sizeof(autoresponderConfig.response_text)); // Default response text
     memset(autoresponderConfig.permitted_nodes, 0,
            sizeof(autoresponderConfig.permitted_nodes)); // Empty "permitted nodes" array
+    autoresponderConfig.bootcount_since_enabled_in_channel = 0;
 }
 
 void AutoresponderModule::saveProtoForModule()
 {
-    LOG_DEBUG("Autoresponder: saving config\n");
+    LOG_INFO("Autoresponder: saving config\n");
 
 #ifdef FS
     FS.mkdir("/prefs");
@@ -369,10 +386,109 @@ bool AutoresponderModule::isNodePermitted(NodeNum node)
     return false;
 }
 
-// If the day has rolled over, reset the "in-channel" message limit
-void AutoresponderModule::handleDayRollover()
+void AutoresponderModule::bootCounting()
 {
-    static constexpr uint32_t MS_IN_DAY = 24 * 60 * 1000UL;
-    if ((millis() / MS_IN_DAY) != (lastInChannelMs / MS_IN_DAY))
-        inChannelResponseCount = 0;
+    uint32_t &bootcount = autoresponderConfig.bootcount_since_enabled_in_channel; // Shortcut for annoyingly long setting
+    bool needSave = false; // Has the method made any changes which need saving?
+
+    // If not enabled for in-channel response
+    if (!moduleConfig.autoresponder.enabled_in_channel) {
+        // Reset the boot count, if not already done
+        if (bootcount > 0) {
+            bootcount = 0;
+            needSave = true;
+        }
+    }
+
+    // If enabled for in-channel response
+    else {
+        bootcount++;
+
+        // Disable if too many boots
+        if (bootcount > maxBootsInChannel) {
+            moduleConfig.autoresponder.enabled_in_channel = false;
+            LOG_WARN("Node has rebooted %zu times since module enabled. Disabling in-channel response to prevent "
+                     "mesh flooding.\n",
+                     bootcount);
+            needSave = true;
+        }
+    }
+
+    if (needSave)
+        saveProtoForModule();
+}
+
+// Called when one of our notifyLater calls is due. Part of the NotifiedWorkerThread class.
+void AutoresponderModule::onNotify(uint32_t notification)
+{
+    switch (notification) {
+    case DUE_CLEAR_HEARD_IN_DM:
+        clearHeardInDM();
+        break;
+    case DUE_CLEAR_HEARD_IN_CHANNEL:
+        clearHeardInChannel();
+        break;
+    case DUE_CLEAR_DAILY_LIMITS:
+        clearDailyLimits();
+        break;
+    case DUE_DISABLE_IN_CHANNEL:
+        disableInChannel();
+        break;
+    }
+}
+
+// Clear the collection of nodes we have already heard (via DM). Allows repeat messages
+void AutoresponderModule::clearHeardInDM()
+{
+    // ABORT: if not enabled for DMs
+    if (!moduleConfig.autoresponder.enabled_dm)
+        return;
+
+    heardInDM.clear();
+
+    // Schedule the next clearing. Hard coded.
+    notifyLater(repeatDMMinutes * MS_IN_MINUTE, DUE_CLEAR_HEARD_IN_DM, false);
+
+    if (millis() > 20000)
+        LOG_INFO("Cleared list of nodes heard via DM. Will clear again in %zu minutes (Value lowered for testing)\n",
+                 repeatDMMinutes);
+}
+
+// Clear the collection of nodes we have already heard (via channel). Allows repeat messages
+void AutoresponderModule::clearHeardInChannel()
+{
+    // ABORT: if not enabled in channel
+    if (!moduleConfig.autoresponder.enabled_in_channel)
+        return;
+
+    heardInChannel.clear();
+
+    // Check if the channel is public or private
+    bool isPublic = (strcmp(channels.getByIndex(0).settings.name, "") == 0);
+
+    // Schedule the next clearing. User configurable, with hard-limit
+    uint32_t minimumRepeatHours = isPublic ? limitRepeatPubChanHours : limitRepeatPrivChanHours;
+    uint32_t repeatHours = max(moduleConfig.autoresponder.repeat_hours, minimumRepeatHours);
+    notifyLater(repeatHours * MS_IN_MINUTE, DUE_CLEAR_HEARD_IN_CHANNEL, false);
+
+    if (millis() > 2000)
+        LOG_INFO("Cleared list of nodes heard via channel. Will clear again in %zu minutes (for testing, normally hours)\n",
+                 repeatHours);
+}
+
+// Reset any per-day limits
+void AutoresponderModule::clearDailyLimits()
+{
+    responsesInChannelToday = 0; // Reset the total daily limit for in-channel messages
+    notifyLater(24 * MS_IN_MINUTE, DUE_CLEAR_DAILY_LIMITS, false);
+
+    if (millis() > 20000)
+        LOG_DEBUG("Resetting daily limits\n");
+}
+
+// Disable in-channel responses (called when maxRuntimeChannelHours exceeded)
+void AutoresponderModule::disableInChannel()
+{
+    moduleConfig.autoresponder.enabled_in_channel = false;
+    saveProtoForModule();
 }
