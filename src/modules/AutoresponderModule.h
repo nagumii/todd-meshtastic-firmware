@@ -1,8 +1,8 @@
 #pragma once
-#include "SinglePortModule.h"
+#include "MeshModule.h"
 #include <unordered_set>
 
-class AutoresponderModule : public SinglePortModule
+class AutoresponderModule : public MeshModule
 {
   public:
     AutoresponderModule();

@@ -1,9 +1,8 @@
 #include "AutoresponderModule.h"
 #include "MeshService.h"
+#include "Router.h"
 #include "configuration.h"
 #include "mesh/generated/meshtastic/autoresponder.pb.h"
-
-#include <assert.h>
 
 static constexpr uint32_t maxInChannelRuntimeMs = 72 * 24 * 60 * 1000UL; // How long before module auto-disables?
 static constexpr uint32_t maxInChannelMs = 10 * 60 * 1000UL;             // Minimum interval between in-channel responses
@@ -14,7 +13,7 @@ static const char *autoresponderConfigFile = "/prefs/autoresponderConf.proto"; /
 static meshtastic_AutoresponderConfig autoresponderConfig;                     // Holds config file during runtime
 
 // Constructor
-AutoresponderModule::AutoresponderModule() : SinglePortModule("autoresponder", meshtastic_PortNum_AUTORESPONDER_APP)
+AutoresponderModule::AutoresponderModule() : MeshModule("autoresponder")
 {
     if (moduleConfig.autoresponder.enabled_dm || moduleConfig.autoresponder.enabled_in_channel) {
         loadProtoForModule();
@@ -300,7 +299,7 @@ void AutoresponderModule::checkForAck(const meshtastic_MeshPacket &mp)
 // Send a text message over the mesh. "Borrowed" from canned message module
 void AutoresponderModule::sendText(NodeNum dest, ChannelIndex channel, const char *message, bool wantReplies)
 {
-    meshtastic_MeshPacket *p = allocDataPacket();
+    meshtastic_MeshPacket *p = router->allocForSending();
     p->to = dest;
     p->channel = channel;
     p->want_ack = true;
