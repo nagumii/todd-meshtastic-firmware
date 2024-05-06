@@ -12,7 +12,6 @@ static constexpr uint32_t repeatDMMinutes = 2;            // How often to reset 
 
 static constexpr uint16_t limitRepeatPubChanHours = 8;  // Min. config val: how often to reset public channel node list
 static constexpr uint16_t limitRepeatPrivChanHours = 4; // Min. config val: how often to reset private channel node list
-static constexpr uint32_t limitRepeatDMHours = 1;       // Min. config val: how often to reset DM node list
 
 // The separate config file for this module (stores strings)
 static const char *autoresponderConfigFile = "/prefs/autoresponderConf.proto"; // Location of the file
@@ -169,6 +168,7 @@ void AutoresponderModule::handleSetConfigMessage(const char *message)
 {
     if (*message) {
         strncpy(autoresponderConfig.response_text, message, sizeof(autoresponderConfig.response_text));
+        autoresponderConfig.bootcount_since_enabled_in_channel = 0; // Reset the boot count
         saveProtoForModule();
         LOG_DEBUG("Autoresponder: setting message to \"%s\"\n", message);
     }
@@ -212,6 +212,7 @@ void AutoresponderModule::handleSetConfigPermittedNodes(const char *rawString)
     } while (r < strlen(rawString)); // Stop if we run out of raw string input
     LOG_DEBUG("\n");                 // Close this log line
 
+    autoresponderConfig.bootcount_since_enabled_in_channel = 0; // Reset the boot count
     saveProtoForModule();
 }
 
@@ -389,33 +390,37 @@ bool AutoresponderModule::isNodePermitted(NodeNum node)
 void AutoresponderModule::bootCounting()
 {
     uint32_t &bootcount = autoresponderConfig.bootcount_since_enabled_in_channel; // Shortcut for annoyingly long setting
-    bool needSave = false; // Has the method made any changes which need saving?
 
     // If not enabled for in-channel response
     if (!moduleConfig.autoresponder.enabled_in_channel) {
         // Reset the boot count, if not already done
         if (bootcount > 0) {
+            LOG_DEBUG("Autoresponder: reseting boot count\n");
             bootcount = 0;
-            needSave = true;
+            saveProtoForModule();
         }
     }
 
     // If enabled for in-channel response
     else {
-        bootcount++;
-
+        // Not disabled yet, just log the current count
+        if (bootcount < maxBootsInChannel) {
+            bootcount++;
+            saveProtoForModule();
+            LOG_DEBUG("Autoresponder: Boot number %zu of %zu before in-channel response is disabled\n", bootcount,
+                      maxBootsInChannel);
+        }
         // Disable if too many boots
-        if (bootcount > maxBootsInChannel) {
-            moduleConfig.autoresponder.enabled_in_channel = false;
-            LOG_WARN("Node has rebooted %zu times since module enabled. Disabling in-channel response to prevent "
+        else {
+            // This only runs once, because this block cannot be reached once in-channel is disabled
+            LOG_WARN("Autoresponder: Booted %zu times since module enabled. Disabling in-channel response to prevent "
                      "mesh flooding.\n",
                      bootcount);
-            needSave = true;
+            disableInChannel();
+            bootcount = 0;
+            saveProtoForModule(); // For the boot count
         }
     }
-
-    if (needSave)
-        saveProtoForModule();
 }
 
 // Called when one of our notifyLater calls is due. Part of the NotifiedWorkerThread class.
@@ -490,5 +495,5 @@ void AutoresponderModule::clearDailyLimits()
 void AutoresponderModule::disableInChannel()
 {
     moduleConfig.autoresponder.enabled_in_channel = false;
-    saveProtoForModule();
+    nodeDB->saveToDisk(SEGMENT_MODULECONFIG);
 }
