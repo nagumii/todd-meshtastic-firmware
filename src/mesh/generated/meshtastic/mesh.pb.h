@@ -153,6 +153,9 @@ typedef enum _meshtastic_HardwareModel {
     /* TWC_MESH_V4 
  Adafruit NRF52840 feather express with SX1262, SSD1306 OLED and NEO6M GPS */
     meshtastic_HardwareModel_TWC_MESH_V4 = 62,
+    /* NRF52_PROMICRO_DIY
+ Promicro NRF52840 with SX1262/LLCC68, SSD1306 OLED and NEO6M GPS */
+    meshtastic_HardwareModel_NRF52_PROMICRO_DIY = 63,
     /* ------------------------------------------------------------------------------------------------------------------------------------------
  Reserved ID For developing private Ports. These will show up in live traffic sparsely, so we can use a high number. Keep it within 8 bits.
  ------------------------------------------------------------------------------------------------------------------------------------------ */
