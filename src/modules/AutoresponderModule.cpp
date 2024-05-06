@@ -264,8 +264,8 @@ void AutoresponderModule::handleChannel(const meshtastic_MeshPacket &mp)
     }
 
     uint32_t now = millis();
-    if (now - prevInChannelResponseMs < (minIntervalChannelMinutes * MS_IN_MINUTE) & prevInChannelResponseMs != 0) {
-        LOG_DEBUG("Autoresponder: too soon for another response in-channel - avoid flooding (lowered for testing)\n");
+    if (now - prevInChannelResponseMs < (minIntervalChannelMinutes * MS_IN_MINUTE) && prevInChannelResponseMs != 0) {
+        LOG_DEBUG("Autoresponder: too soon for another response in-channel, to anyone (lowered for testing)\n");
         return;
     }
 
