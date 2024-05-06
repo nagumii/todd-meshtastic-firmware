@@ -278,8 +278,8 @@ void AutoresponderModule::handleChannel(const meshtastic_MeshPacket &mp)
         return;
     }
 
-    // Send the auto-response, mark that we're waiting for an ACK
-    LOG_INFO("Autoresponder: sending a reply\n");
+    // Send the auto-response, then mark that we're waiting for an ACK
+    LOG_DEBUG("Autoresponder: sending a reply\n");
     sendText(NODENUM_BROADCAST, 0, autoresponderConfig.response_text, true); // Respond on primary channel
     respondingTo = mp.from;                                                  // Record the original sender
     responsesInChannelToday++;                                               // Increment "overall" in-channel message count
