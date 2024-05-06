@@ -50,6 +50,8 @@ class AutoresponderModule : public MeshModule, protected concurrency::NotifiedWo
     NodeNum respondingTo;       // NodeNum dest of latest auto-response, to store if we get an ACK
     bool wasDM;                 // Is our response to a DM, or to a message we heard in channel?
 
+    char channelName[12] = "";  // Detect changes in channel (can happen without reboot)
+
     std::unordered_set<NodeNum> heardInDM, heardInChannel; // Node numbers which we have responded to
     uint16_t responsesInChannelToday = 0;                  // How many responses have been sent in-channel, within last 24 hours
     uint32_t prevInChannelResponseMs = 0;                  // When was the previous in-channel response sent?

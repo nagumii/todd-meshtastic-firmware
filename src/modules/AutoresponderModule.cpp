@@ -36,6 +36,9 @@ AutoresponderModule::AutoresponderModule() : MeshModule("Autoresponder"), Notifi
         // Set a timer to disable in-channel responses after maxRuntimeChannelHours
         notifyLater(maxRuntimeChannelHours * MS_IN_MINUTE, DUE_DISABLE_IN_CHANNEL, false);
 
+        // Cache the current channel name, to detect changes (can happen without reboot)
+        strcpy(channelName, channels.getByIndex(0).settings.name);
+
         // Debug output at boot
         LOG_INFO("Autoresponder module enabled\n");
         if (autoresponderConfig.permitted_nodes_count > 0) {
@@ -278,6 +281,14 @@ void AutoresponderModule::handleChannel(const meshtastic_MeshPacket &mp)
         return;
     }
 
+    // If channel changed (without a reboot), reset the timer and clear the list of seen nodes
+    char *currentChannelName = channels.getByIndex(0).settings.name;
+    if (strcmp(currentChannelName, channelName) != 0) {
+        LOG_DEBUG("Autoresponder: detected a channel change\n");
+        clearHeardInChannel();
+        strcpy(channelName, currentChannelName);
+    }
+
     // Send the auto-response, then mark that we're waiting for an ACK
     LOG_DEBUG("Autoresponder: sending a reply\n");
     sendText(NODENUM_BROADCAST, 0, autoresponderConfig.response_text, true); // Respond on primary channel
@@ -474,7 +485,7 @@ void AutoresponderModule::clearHeardInChannel()
     // Schedule the next clearing. User configurable, with hard-limit
     uint32_t minimumRepeatHours = isPublic ? limitRepeatPubChanHours : limitRepeatPrivChanHours;
     uint32_t repeatHours = max(moduleConfig.autoresponder.repeat_hours, minimumRepeatHours);
-    notifyLater(repeatHours * MS_IN_MINUTE, DUE_CLEAR_HEARD_IN_CHANNEL, false);
+    notifyLater(repeatHours * MS_IN_MINUTE, DUE_CLEAR_HEARD_IN_CHANNEL, true); // "true" - need overwrite, if channel changes
 
     if (millis() > 2000)
         LOG_INFO("Cleared list of nodes heard via channel. Will clear again in %zu minutes (for testing, normally hours)\n",
