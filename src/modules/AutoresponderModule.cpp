@@ -6,16 +6,17 @@
 
 // Fixed limits: Channel
 static constexpr uint8_t maxResponsesChannelDaily = 10; // Max responses per day, in-channel
-static constexpr uint8_t maxRuntimeChannelHours = 72;   // How long before module auto-disables in-channel responses?
-static constexpr uint8_t maxBootsChannel = 10;          // How many boots before module in auto-disabled in-channel?
-static constexpr uint16_t cooldownChannelMinutes = 2;   // Minimum interval between ANY response in-channel
+static constexpr uint8_t expireAfterBootNum = 5;      // How many boots before response auto-disabled (channel and optionally, DM)
+static constexpr uint16_t cooldownChannelMinutes = 2; // Minimum interval between ANY response in-channel
 
 // Fixed limits: DM
 static constexpr uint32_t repeatDMMinutes = 2; // How long to wait before allowing response to same node - in DM
+// expireAfterBootNum also applies to DM, if autoresponder.should_dm_expire
 
 // Limits on user-config: Channel
-static constexpr uint16_t minRepeatPubChanHours = 8;  // How long to wait before allowing response to same node - public channel
-static constexpr uint16_t minRepeatPrivChanHours = 4; // How long to wait before allowing response to same node - private channel
+static constexpr uint32_t minRepeatPubChanHours = 8;  // How long to wait before allowing response to same node - public channel
+static constexpr uint32_t minRepeatPrivChanHours = 4; // How long to wait before allowing response to same node - private channel
+static constexpr uint32_t maxExpirationChannelHours = 72; // How long before module auto-disables in-channel responses
 
 // The separate config file for this module.
 // Holds data which the phone doesn't need to know,
@@ -24,7 +25,7 @@ static const char *autoresponderConfigFile = "/prefs/autoresponderConf.proto"; /
 static meshtastic_AutoresponderConfig autoresponderConfig;                     // Holds config file during runtime
 
 // Constructor
-AutoresponderModule::AutoresponderModule() : MeshModule("Autoresponder"), NotifiedWorkerThread("Autoresponder")
+AutoresponderModule::AutoresponderModule() : MeshModule("Autoresponder"), OSThread("Autoresponder")
 {
     // If module is enabled
     if (moduleConfig.autoresponder.enabled_dm || moduleConfig.autoresponder.enabled_in_channel) {
@@ -33,14 +34,6 @@ AutoresponderModule::AutoresponderModule() : MeshModule("Autoresponder"), Notifi
 
         // Check if the node has rebooted frequently, in case bypassing rate limits and spamming the mesh
         bootCounting();
-
-        // Begin periodically clearing the list of heard nodes (allow repeats)
-        clearHeardInDM();
-        clearHeardInChannel();
-        handleDailyTasks();
-
-        // Set a timer to disable in-channel responses after maxRuntimeChannelHours
-        notifyLater(maxRuntimeChannelHours * MS_IN_MINUTE, EXPIRED_CHANNEL, false);
 
         // Cache the current channel name, to detect changes (can happen without reboot)
         strcpy(channelName, channels.getByIndex(0).settings.name);
@@ -415,102 +408,130 @@ bool AutoresponderModule::isNodePermitted(NodeNum node)
     return false;
 }
 
+// Is the primary channel public (longfast)
+bool AutoresponderModule::isPrimaryPublic()
+{
+    return (strcmp(channels.getByIndex(0).settings.name, "") == 0); // If name is empty
+}
+
 // Anti-flooding feature: track how many times the device has rebooted,
 // disable response once limit reached
 void AutoresponderModule::bootCounting()
 {
+    // ABORT: if no need to count boots currently
+    if (!moduleConfig.autoresponder.enabled_in_channel &&
+        (!moduleConfig.autoresponder.enabled_dm || !moduleConfig.autoresponder.should_dm_expire))
+        return;
+
     uint32_t &bootcount = autoresponderConfig.bootcount_since_enabled; // Shortcut for annoyingly long setting
 
-    // If boot counting is not in use
-    // (In-Channel disabled, DM disabled or set "shouldn't expire")
-    if (!moduleConfig.autoresponder.enabled_in_channel &&
-        (!moduleConfig.autoresponder.enabled_dm || !moduleConfig.autoresponder.should_dm_expire)) {
-        // Reset the boot count, if not already done
-        if (bootcount > 0) {
-            LOG_DEBUG("Autoresponder: reseting boot count\n");
-            bootcount = 0;
-            saveProtoForModule();
-        }
+    // Not disabled yet, just log the current count
+    if (bootcount < expireAfterBootNum) {
+        bootcount++;
+        saveProtoForModule();
+        LOG_DEBUG("Autoresponder: Boot number %zu of %zu before autoresponse is disabled. (in channel", bootcount,
+                  expireAfterBootNum);
+        if (moduleConfig.autoresponder.should_dm_expire && moduleConfig.autoresponder.expiration_hours)
+            LOG_DEBUG(" and for DMs");
+        LOG_DEBUG(")\n");
     }
-
-    // If enabled for in-channel response
+    // Disable if too many boots
     else {
-        // Not disabled yet, just log the current count
-        if (bootcount < maxBootsChannel) {
-            bootcount++;
-            saveProtoForModule();
-            LOG_DEBUG("Autoresponder: Boot number %zu of %zu before in-channel response is disabled\n", bootcount,
-                      maxBootsChannel);
-        }
-        // Disable if too many boots
-        else {
-            // This only runs once, because this block cannot be reached once in-channel is disabled
-            LOG_WARN("Autoresponder: Booted %zu times since module enabled. Disabling in-channel response to prevent "
-                     "mesh flooding.\n",
-                     bootcount);
-            handleExpiredChannel(); // Reusing the method which disables in-channel messaging after fixed time
-            bootcount = 0;
-            saveProtoForModule(); // For the boot count
-        }
+        // This only runs once, because this block cannot be reached once in-channel is disabled
+        LOG_WARN("Autoresponder: Booted %zu times since module enabled. Disabling response to prevent "
+                 "mesh flooding.\n",
+                 bootcount);
+        moduleConfig.autoresponder.enabled_in_channel = false;
+        if (moduleConfig.autoresponder.should_dm_expire)
+            moduleConfig.autoresponder.enabled_dm = false;
+        nodeDB->saveToDisk(SEGMENT_MODULECONFIG); // Save module config
+        bootcount = 0;
+        saveProtoForModule(); // Save boot count
     }
 }
 
-// Called when one of our notifyLater calls is due. Part of the NotifiedWorkerThread class.
-void AutoresponderModule::onNotify(uint32_t notification)
+int32_t AutoresponderModule::runOnce()
 {
-    switch (notification) {
-    case DUE_CLEAR_HEARD_IN_DM:
-        clearHeardInDM();
-        break;
-    case DUE_CLEAR_HEARD_IN_CHANNEL:
-        clearHeardInChannel();
-        break;
-    case DUE_DAILY:
-        handleDailyTasks();
-        break;
-    case EXPIRED_CHANNEL:
-        handleExpiredChannel();
-        break;
+    // Periodic tasks
+    static uint32_t prevClearDM = 0;
+    static uint32_t prevClearChannel = 0;
+    static uint32_t prevDailyTasks = 0;
+
+    // Determine intervals
+    uint32_t intervalClearDM = MS_IN_MINUTE * repeatDMMinutes;
+    uint32_t intervalDailyTasks = MS_IN_MINUTE * 24;
+    uint32_t intervalClearChannel = MS_IN_MINUTE * max(moduleConfig.autoresponder.repeat_hours,
+                                                       (isPrimaryPublic() ? minRepeatPubChanHours : minRepeatPrivChanHours));
+
+    uint32_t now = millis();
+
+    // I think millis overflow should take care of itself..(?)
+
+    // ----- Periodic Task -----
+    // Clear the heardInDM set, allow repeated responses
+    if (moduleConfig.autoresponder.enabled_dm) {
+        if (now - prevClearDM > intervalClearDM) {
+            prevClearDM = now;
+            clearHeardInDM();
+        }
     }
+
+    // ----- Periodic Task -----
+    // Clear the heardInChannel set, allow repeated responses
+    if (moduleConfig.autoresponder.enabled_in_channel) {
+        if (now - prevClearChannel > intervalClearChannel) {
+            prevClearChannel = now;
+            clearHeardInChannel();
+        }
+    }
+
+    // ----- Periodic Task -----
+    // Reset daily limits
+    if (now - prevDailyTasks > intervalDailyTasks) {
+        prevDailyTasks = now;
+        handleDailyTasks();
+    }
+
+    // ----- Single-shot Task -----
+    // Disable in-channel response (time limit)
+    if (moduleConfig.autoresponder.enabled_in_channel) {
+        uint32_t expirationHours;
+        const uint32_t &userValue = moduleConfig.autoresponder.expiration_hours;
+        const uint32_t &limit = maxExpirationChannelHours;
+
+        if (userValue > 0 && userValue < limit)
+            expirationHours = userValue;
+        else
+            expirationHours = limit;
+
+        if (now > expirationHours * MS_IN_MINUTE)
+            handleExpiredChannel();
+    }
+
+    // ----- Single-shot Task -----
+    // Disable DM response (time limit, optional)
+    if (moduleConfig.autoresponder.enabled_dm && moduleConfig.autoresponder.should_dm_expire &&
+        moduleConfig.autoresponder.expiration_hours > 0) {
+        if (now > moduleConfig.autoresponder.expiration_hours * MS_IN_MINUTE)
+            handleExpiredDM();
+    }
+
+    // Run thread every minute
+    return 60 * 1000UL;
 }
 
 // Clear the collection of nodes we have already heard (via DM). Allows repeat messages
 void AutoresponderModule::clearHeardInDM()
 {
-    // ABORT: if not enabled for DMs
-    if (!moduleConfig.autoresponder.enabled_dm)
-        return;
-
     heardInDM.clear();
-
-    // Schedule the next clearing. Hard coded.
-    notifyLater(repeatDMMinutes * MS_IN_MINUTE, DUE_CLEAR_HEARD_IN_DM, false);
-
-    if (millis() > 20000)
-        LOG_INFO("Cleared list of nodes heard via DM. Will clear again in %zu minutes (Value lowered for testing)\n",
-                 repeatDMMinutes);
+    LOG_INFO("Cleared list of nodes heard via DM\n");
 }
 
 // Clear the collection of nodes we have already heard (via channel). Allows repeat messages
 void AutoresponderModule::clearHeardInChannel()
 {
-    // ABORT: if not enabled in channel
-    if (!moduleConfig.autoresponder.enabled_in_channel)
-        return;
-
     heardInChannel.clear();
-
-    // Check if the channel is public or private
-    bool isPublic = (strcmp(channels.getByIndex(0).settings.name, "") == 0);
-
-    // Schedule the next clearing. User configurable, with hard-limit
-    uint32_t minimumRepeatHours = isPublic ? minRepeatPubChanHours : minRepeatPrivChanHours;
-    uint32_t repeatHours = max(moduleConfig.autoresponder.repeat_hours, minimumRepeatHours);
-    notifyLater(repeatHours * MS_IN_MINUTE, DUE_CLEAR_HEARD_IN_CHANNEL, true); // "true" - need overwrite, if channel changes
-
-    if (millis() > 2000)
-        LOG_INFO("Cleared list of nodes heard via channel. Will clear again in %zu minutes (for testing, normally hours)\n",
-                 repeatHours);
+    LOG_INFO("Cleared list of nodes heard in channel\n");
 }
 
 // Handle any tasks which should run daily (clear daily limits)
@@ -518,15 +539,21 @@ void AutoresponderModule::handleDailyTasks()
 {
     // Reset the total daily limit for in-channel messages
     responsesInChannelToday = 0;
-    notifyLater(24 * MS_IN_MINUTE, DUE_DAILY, false);
-
-    if (millis() > 20000)
-        LOG_DEBUG("Resetting daily limits\n");
+    LOG_INFO("Resetting daily limits\n");
 }
 
-// Disable in-channel responses (called when maxRuntimeChannelHours exceeded)
+// Disable in-channel responses, when expiry time is reached
 void AutoresponderModule::handleExpiredChannel()
 {
+    LOG_INFO("In-channel responses disabled, expiry time reached.\n");
     moduleConfig.autoresponder.enabled_in_channel = false;
+    nodeDB->saveToDisk(SEGMENT_MODULECONFIG);
+}
+
+// Disables DM responses, if DMs responses are set to expire
+void AutoresponderModule::handleExpiredDM()
+{
+    LOG_INFO("DM responses disabled, expiry time reached.\n");
+    moduleConfig.autoresponder.enabled_dm = false;
     nodeDB->saveToDisk(SEGMENT_MODULECONFIG);
 }
