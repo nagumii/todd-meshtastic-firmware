@@ -4,16 +4,22 @@
 #include "configuration.h"
 #include "mesh/generated/meshtastic/autoresponder.pb.h"
 
-static constexpr uint8_t maxResponsesInChannelDaily = 10; // Max responses per day, in-channel
-static constexpr uint8_t maxRuntimeChannelHours = 72;     // How long before module auto-disables in-channel responses?
-static constexpr uint8_t maxBootsInChannel = 10;          // How many boots before module in auto-disabled in-channel?
-static constexpr uint16_t minIntervalChannelMinutes = 2;  // Minimum interval between ANY response in-channel
-static constexpr uint32_t repeatDMMinutes = 2;            // How often to reset DM node list
+// Fixed limits: Channel
+static constexpr uint8_t maxResponsesChannelDaily = 10; // Max responses per day, in-channel
+static constexpr uint8_t maxRuntimeChannelHours = 72;   // How long before module auto-disables in-channel responses?
+static constexpr uint8_t maxBootsChannel = 10;          // How many boots before module in auto-disabled in-channel?
+static constexpr uint16_t cooldownChannelMinutes = 2;   // Minimum interval between ANY response in-channel
 
-static constexpr uint16_t limitRepeatPubChanHours = 8;  // Min. config val: how often to reset public channel node list
-static constexpr uint16_t limitRepeatPrivChanHours = 4; // Min. config val: how often to reset private channel node list
+// Fixed limits: DM
+static constexpr uint32_t repeatDMMinutes = 2; // How long to wait before allowing response to same node - in DM
 
-// The separate config file for this module (stores strings)
+// Limits on user-config: Channel
+static constexpr uint16_t minRepeatPubChanHours = 8;  // How long to wait before allowing response to same node - public channel
+static constexpr uint16_t minRepeatPrivChanHours = 4; // How long to wait before allowing response to same node - private channel
+
+// The separate config file for this module.
+// Holds data which the phone doesn't need to know,
+// or which is too large to burden all devices with in config.proto
 static const char *autoresponderConfigFile = "/prefs/autoresponderConf.proto"; // Location of the file
 static meshtastic_AutoresponderConfig autoresponderConfig;                     // Holds config file during runtime
 
@@ -31,10 +37,10 @@ AutoresponderModule::AutoresponderModule() : MeshModule("Autoresponder"), Notifi
         // Begin periodically clearing the list of heard nodes (allow repeats)
         clearHeardInDM();
         clearHeardInChannel();
-        clearDailyLimits();
+        handleDailyTasks();
 
         // Set a timer to disable in-channel responses after maxRuntimeChannelHours
-        notifyLater(maxRuntimeChannelHours * MS_IN_MINUTE, DUE_DISABLE_IN_CHANNEL, false);
+        notifyLater(maxRuntimeChannelHours * MS_IN_MINUTE, EXPIRED_CHANNEL, false);
 
         // Cache the current channel name, to detect changes (can happen without reboot)
         strcpy(channelName, channels.getByIndex(0).settings.name);
@@ -75,7 +81,7 @@ bool AutoresponderModule::wantPacket(const meshtastic_MeshPacket *p)
     }
 }
 
-// Check the content of the text message, then take action if required
+// MeshModule packets arrive here. Hand off the appropriate module
 ProcessMessage AutoresponderModule::handleReceived(const meshtastic_MeshPacket &mp)
 {
     // Hand off to relevant methood, basded on port number
@@ -135,6 +141,7 @@ AdminMessageHandleResult AutoresponderModule::handleAdminMessageForModule(const 
     return result;
 }
 
+// An app (or other client) wants to know the current message
 void AutoresponderModule::handleGetConfigMessage(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response)
 {
     if (req.decoded.want_response) {
@@ -146,6 +153,7 @@ void AutoresponderModule::handleGetConfigMessage(const meshtastic_MeshPacket &re
     }
 }
 
+// An app (or other client) wants to know the current list of permitted nodes
 void AutoresponderModule::handleGetConfigPermittedNodes(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response)
 {
     if (req.decoded.want_response) {
@@ -167,17 +175,19 @@ void AutoresponderModule::handleGetConfigPermittedNodes(const meshtastic_MeshPac
     }
 }
 
+// An app (or other client) wants to set the response message
 void AutoresponderModule::handleSetConfigMessage(const char *message)
 {
     if (*message) {
         strncpy(autoresponderConfig.response_text, message, sizeof(autoresponderConfig.response_text));
-        autoresponderConfig.bootcount_since_enabled_in_channel = 0; // Reset the boot count
+        autoresponderConfig.bootcount_since_enabled = 0; // Reset the boot count
         saveProtoForModule();
         LOG_DEBUG("Autoresponder: setting message to \"%s\"\n", message);
     }
 }
 
-// Set the list of "permitted nodes". Decode the raw string into NodeNums, store in protobuf
+// An app (or other client) wants to set the list of "permitted nodes".
+// Arrives as raw string. Processed into NodeNums, then stored in protobuf.
 void AutoresponderModule::handleSetConfigPermittedNodes(const char *rawString)
 {
     char nodeIDBuilder[9]{};
@@ -215,11 +225,11 @@ void AutoresponderModule::handleSetConfigPermittedNodes(const char *rawString)
     } while (r < strlen(rawString)); // Stop if we run out of raw string input
     LOG_DEBUG("\n");                 // Close this log line
 
-    autoresponderConfig.bootcount_since_enabled_in_channel = 0; // Reset the boot count
+    autoresponderConfig.bootcount_since_enabled = 0; // Reset the boot count
     saveProtoForModule();
 }
 
-// Reply if message meets the criteria for a DM response
+// A DM arrived from the mesh. Maybe send an autoresponse?
 void AutoresponderModule::handleDM(const meshtastic_MeshPacket &mp)
 {
     // Abort if not enabled for DMs
@@ -239,14 +249,14 @@ void AutoresponderModule::handleDM(const meshtastic_MeshPacket &mp)
     }
 
     // Send the auto-response, mark that we're waiting for an ACK
-    LOG_DEBUG("Autoresponder: sending a reply\n");
+    LOG_DEBUG("Autoresponder: responding to a message via DM\n");
     sendText(mp.from, mp.channel, autoresponderConfig.response_text, true);
     respondingTo = mp.from; // Record the original sender
     waitingForAck = true;
     wasDM = true; // Indicate that a successful ACK should add this user to the heardInDM set
 }
 
-// Reply if message meets the criteria for in-channel response
+// A message arrived from a mesh channel. Maybe send a response?
 void AutoresponderModule::handleChannel(const meshtastic_MeshPacket &mp)
 {
     // ABORT if in-channel response is disabled
@@ -258,14 +268,16 @@ void AutoresponderModule::handleChannel(const meshtastic_MeshPacket &mp)
         return;
 
     // ABORT if too many responses in channel within past 24 hours
-    if (responsesInChannelToday > maxResponsesInChannelDaily) {
+    if (responsesInChannelToday > maxResponsesChannelDaily) {
         LOG_DEBUG("Autoresponder: too many responses sent in-channel within last 24 hours\n");
         return;
     }
 
     uint32_t now = millis();
-    if (now - prevInChannelResponseMs < (minIntervalChannelMinutes * MS_IN_MINUTE) && prevInChannelResponseMs != 0) {
-        LOG_DEBUG("Autoresponder: too soon for another response in-channel, to anyone (lowered for testing)\n");
+
+    // ABORT
+    if (now - prevInChannelResponseMs < (cooldownChannelMinutes * MS_IN_MINUTE) && prevInChannelResponseMs != 0) {
+        LOG_DEBUG("Autoresponder: cooldown (in-channel). No responses to anyone right now.\n");
         return;
     }
 
@@ -290,7 +302,7 @@ void AutoresponderModule::handleChannel(const meshtastic_MeshPacket &mp)
     }
 
     // Send the auto-response, then mark that we're waiting for an ACK
-    LOG_DEBUG("Autoresponder: sending a reply\n");
+    LOG_DEBUG("Autoresponder: responding to a message in channel\n");
     sendText(NODENUM_BROADCAST, 0, autoresponderConfig.response_text, true); // Respond on primary channel
     respondingTo = mp.from;                                                  // Record the original sender
     responsesInChannelToday++;                                               // Increment "overall" in-channel message count
@@ -299,6 +311,7 @@ void AutoresponderModule::handleChannel(const meshtastic_MeshPacket &mp)
     wasDM = false; // Indicate that a successful ACK should add this user to the heardInChannel list
 }
 
+// If we send an autoresponse, this method listens for a relevant ack, before marking the node as "responded to"
 void AutoresponderModule::checkForAck(const meshtastic_MeshPacket &mp)
 {
     // The payload portion of the mesh packet
@@ -356,6 +369,8 @@ void AutoresponderModule::loadProtoForModule()
         setDefaultConfig();
 }
 
+// Use default settings for the bulk config (separate file, not config.proto)
+// File was corrupt? Not yet present?
 void AutoresponderModule::setDefaultConfig()
 {
     LOG_INFO("%s not loaded. Autoresponder using default config\n", autoresponderConfigFile);
@@ -363,9 +378,10 @@ void AutoresponderModule::setDefaultConfig()
            sizeof(autoresponderConfig.response_text)); // Default response text
     memset(autoresponderConfig.permitted_nodes, 0,
            sizeof(autoresponderConfig.permitted_nodes)); // Empty "permitted nodes" array
-    autoresponderConfig.bootcount_since_enabled_in_channel = 0;
+    autoresponderConfig.bootcount_since_enabled = 0;
 }
 
+// Save the bulk config (separate file, not config.proto) from RAM back to file
 void AutoresponderModule::saveProtoForModule()
 {
     LOG_INFO("Autoresponder: saving config\n");
@@ -382,6 +398,7 @@ void AutoresponderModule::saveProtoForModule()
     return;
 }
 
+// Is this node in the list of "permitted nodes"?
 bool AutoresponderModule::isNodePermitted(NodeNum node)
 {
     // If list empty, all nodes allowed
@@ -398,12 +415,16 @@ bool AutoresponderModule::isNodePermitted(NodeNum node)
     return false;
 }
 
+// Anti-flooding feature: track how many times the device has rebooted,
+// disable response once limit reached
 void AutoresponderModule::bootCounting()
 {
-    uint32_t &bootcount = autoresponderConfig.bootcount_since_enabled_in_channel; // Shortcut for annoyingly long setting
+    uint32_t &bootcount = autoresponderConfig.bootcount_since_enabled; // Shortcut for annoyingly long setting
 
-    // If not enabled for in-channel response
-    if (!moduleConfig.autoresponder.enabled_in_channel) {
+    // If boot counting is not in use
+    // (In-Channel disabled, DM disabled or set "shouldn't expire")
+    if (!moduleConfig.autoresponder.enabled_in_channel &&
+        (!moduleConfig.autoresponder.enabled_dm || !moduleConfig.autoresponder.should_dm_expire)) {
         // Reset the boot count, if not already done
         if (bootcount > 0) {
             LOG_DEBUG("Autoresponder: reseting boot count\n");
@@ -415,11 +436,11 @@ void AutoresponderModule::bootCounting()
     // If enabled for in-channel response
     else {
         // Not disabled yet, just log the current count
-        if (bootcount < maxBootsInChannel) {
+        if (bootcount < maxBootsChannel) {
             bootcount++;
             saveProtoForModule();
             LOG_DEBUG("Autoresponder: Boot number %zu of %zu before in-channel response is disabled\n", bootcount,
-                      maxBootsInChannel);
+                      maxBootsChannel);
         }
         // Disable if too many boots
         else {
@@ -427,7 +448,7 @@ void AutoresponderModule::bootCounting()
             LOG_WARN("Autoresponder: Booted %zu times since module enabled. Disabling in-channel response to prevent "
                      "mesh flooding.\n",
                      bootcount);
-            disableInChannel();
+            handleExpiredChannel(); // Reusing the method which disables in-channel messaging after fixed time
             bootcount = 0;
             saveProtoForModule(); // For the boot count
         }
@@ -444,11 +465,11 @@ void AutoresponderModule::onNotify(uint32_t notification)
     case DUE_CLEAR_HEARD_IN_CHANNEL:
         clearHeardInChannel();
         break;
-    case DUE_CLEAR_DAILY_LIMITS:
-        clearDailyLimits();
+    case DUE_DAILY:
+        handleDailyTasks();
         break;
-    case DUE_DISABLE_IN_CHANNEL:
-        disableInChannel();
+    case EXPIRED_CHANNEL:
+        handleExpiredChannel();
         break;
     }
 }
@@ -483,7 +504,7 @@ void AutoresponderModule::clearHeardInChannel()
     bool isPublic = (strcmp(channels.getByIndex(0).settings.name, "") == 0);
 
     // Schedule the next clearing. User configurable, with hard-limit
-    uint32_t minimumRepeatHours = isPublic ? limitRepeatPubChanHours : limitRepeatPrivChanHours;
+    uint32_t minimumRepeatHours = isPublic ? minRepeatPubChanHours : minRepeatPrivChanHours;
     uint32_t repeatHours = max(moduleConfig.autoresponder.repeat_hours, minimumRepeatHours);
     notifyLater(repeatHours * MS_IN_MINUTE, DUE_CLEAR_HEARD_IN_CHANNEL, true); // "true" - need overwrite, if channel changes
 
@@ -492,18 +513,19 @@ void AutoresponderModule::clearHeardInChannel()
                  repeatHours);
 }
 
-// Reset any per-day limits
-void AutoresponderModule::clearDailyLimits()
+// Handle any tasks which should run daily (clear daily limits)
+void AutoresponderModule::handleDailyTasks()
 {
-    responsesInChannelToday = 0; // Reset the total daily limit for in-channel messages
-    notifyLater(24 * MS_IN_MINUTE, DUE_CLEAR_DAILY_LIMITS, false);
+    // Reset the total daily limit for in-channel messages
+    responsesInChannelToday = 0;
+    notifyLater(24 * MS_IN_MINUTE, DUE_DAILY, false);
 
     if (millis() > 20000)
         LOG_DEBUG("Resetting daily limits\n");
 }
 
 // Disable in-channel responses (called when maxRuntimeChannelHours exceeded)
-void AutoresponderModule::disableInChannel()
+void AutoresponderModule::handleExpiredChannel()
 {
     moduleConfig.autoresponder.enabled_in_channel = false;
     nodeDB->saveToDisk(SEGMENT_MODULECONFIG);
