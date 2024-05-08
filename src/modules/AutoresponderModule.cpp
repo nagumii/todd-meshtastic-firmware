@@ -23,6 +23,7 @@ static constexpr uint32_t maxExpirationChannelHours = 72; // How long before mod
 // or which is too large to burden all devices with in config.proto
 static const char *ownConfigFile = "/prefs/autoresponderConf.proto"; // Location of the file
 static meshtastic_AutoresponderConfig ownConfig;                     // Holds config file during runtime
+bool attemptedLoadOwnConfig = false;                                 // Have we already attempted to load ourConfig?
 
 // Reference for config stored in moduleConfig.proto - saves typing
 static meshtastic_ModuleConfig_AutoresponderConfig &modConfig = moduleConfig.autoresponder;
@@ -143,6 +144,10 @@ AdminMessageHandleResult AutoresponderModule::handleAdminMessageForModule(const 
 // An app (or other client) wants to know the current message
 void AutoresponderModule::handleGetConfigMessage(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response)
 {
+    // If we haven't already grabbed our own config file
+    if (!attemptedLoadOwnConfig)
+        loadOwnConfig();
+
     if (req.decoded.want_response) {
         // Mark that response packet contains the current message
         response->which_payload_variant = meshtastic_AdminMessage_get_autoresponder_message_response_tag;
@@ -155,6 +160,10 @@ void AutoresponderModule::handleGetConfigMessage(const meshtastic_MeshPacket &re
 // An app (or other client) wants to know the current list of permitted nodes
 void AutoresponderModule::handleGetConfigPermittedNodes(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response)
 {
+    // If we haven't already grabbed our own config file
+    if (!attemptedLoadOwnConfig)
+        loadOwnConfig();
+
     if (req.decoded.want_response) {
         // Mark that this response packet contains the list of permitted nodes (as a string representation)
         response->which_payload_variant = meshtastic_AdminMessage_get_autoresponder_permittednodes_response_tag;
@@ -358,6 +367,8 @@ void AutoresponderModule::sendText(NodeNum dest, ChannelIndex channel, const cha
 // Load our own config (separate file, not module_config.proto)
 void AutoresponderModule::loadOwnConfig()
 {
+    attemptedLoadOwnConfig = true; // Don't make another attempt to load. Would overwrite any changed settings in RAM
+
     // Attempt to load the proto file into RAM
     LoadFileResult result;
     result = nodeDB->loadProto(ownConfigFile, meshtastic_AutoresponderConfig_size, sizeof(meshtastic_AutoresponderConfig),
