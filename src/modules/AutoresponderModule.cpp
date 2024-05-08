@@ -21,16 +21,19 @@ static constexpr uint32_t maxExpirationChannelHours = 72; // How long before mod
 // The separate config file for this module.
 // Holds data which the phone doesn't need to know,
 // or which is too large to burden all devices with in config.proto
-static const char *autoresponderConfigFile = "/prefs/autoresponderConf.proto"; // Location of the file
-static meshtastic_AutoresponderConfig autoresponderConfig;                     // Holds config file during runtime
+static const char *ownConfigFile = "/prefs/autoresponderConf.proto"; // Location of the file
+static meshtastic_AutoresponderConfig ownConfig;                     // Holds config file during runtime
+
+// Reference for config stored in moduleConfig.proto - saves typing
+static meshtastic_ModuleConfig_AutoresponderConfig &modConfig = moduleConfig.autoresponder;
 
 // Constructor
 AutoresponderModule::AutoresponderModule() : MeshModule("Autoresponder"), OSThread("Autoresponder")
 {
     // If module is enabled
-    if (moduleConfig.autoresponder.enabled_dm || moduleConfig.autoresponder.enabled_in_channel) {
+    if (modConfig.enabled_dm || modConfig.enabled_in_channel) {
         // Load the config from flash
-        loadProtoForModule();
+        loadOwnConfig();
 
         // Check if the node has rebooted frequently, in case bypassing rate limits and spamming the mesh
         bootCounting();
@@ -39,15 +42,15 @@ AutoresponderModule::AutoresponderModule() : MeshModule("Autoresponder"), OSThre
         strcpy(channelName, channels.getByIndex(0).settings.name);
 
         // Debug output at boot
-        if (moduleConfig.autoresponder.enabled_dm)
+        if (modConfig.enabled_dm)
             LOG_INFO("Autoresponder module enabled for DMs\n");
-        if (moduleConfig.autoresponder.enabled_in_channel)
+        if (modConfig.enabled_in_channel)
             LOG_INFO("Autoresponder: module enabled in channel\n");
-        if (autoresponderConfig.permitted_nodes_count > 0) {
+        if (ownConfig.permitted_nodes_count > 0) {
             LOG_INFO("Autoresponder: only responding to node ID ");
-            for (uint8_t i = 0; i < autoresponderConfig.permitted_nodes_count; i++) {
-                LOG_INFO("!%0x", autoresponderConfig.permitted_nodes[i]);
-                if (i < autoresponderConfig.permitted_nodes_count - 1)
+            for (uint8_t i = 0; i < ownConfig.permitted_nodes_count; i++) {
+                LOG_INFO("!%0x", ownConfig.permitted_nodes[i]);
+                if (i < ownConfig.permitted_nodes_count - 1)
                     LOG_DEBUG(", ");
             }
             LOG_DEBUG("\n");
@@ -63,7 +66,7 @@ AutoresponderModule::AutoresponderModule() : MeshModule("Autoresponder"), OSThre
 bool AutoresponderModule::wantPacket(const meshtastic_MeshPacket *p)
 {
     // If module is disabled for both DM and in channel, ignore packets
-    if (!moduleConfig.autoresponder.enabled_dm && !moduleConfig.autoresponder.enabled_in_channel)
+    if (!modConfig.enabled_dm && !modConfig.enabled_in_channel)
         return false;
 
     // Which port is the packet from
@@ -144,7 +147,7 @@ void AutoresponderModule::handleGetConfigMessage(const meshtastic_MeshPacket &re
         // Mark that response packet contains the current message
         response->which_payload_variant = meshtastic_AdminMessage_get_autoresponder_message_response_tag;
         // Copy the current message into the response packet
-        strncpy(response->get_autoresponder_message_response, autoresponderConfig.response_text,
+        strncpy(response->get_autoresponder_message_response, ownConfig.response_text,
                 sizeof(response->get_autoresponder_message_response));
     }
 }
@@ -159,13 +162,13 @@ void AutoresponderModule::handleGetConfigPermittedNodes(const meshtastic_MeshPac
         // Convert each permitted NodeNum to a hex string, and add to the response packet
         strcpy(response->get_autoresponder_permittednodes_response, ""); // Start with an empty string
 
-        for (uint8_t i = 0; i < autoresponderConfig.permitted_nodes_count; i++) {
+        for (uint8_t i = 0; i < ownConfig.permitted_nodes_count; i++) {
             char nodeId[10];
-            sprintf(nodeId, "!%0x", autoresponderConfig.permitted_nodes[i]);
+            sprintf(nodeId, "!%0x", ownConfig.permitted_nodes[i]);
             strcat(response->get_autoresponder_permittednodes_response, nodeId);
 
             // Append a delimiter, if needed
-            if (i < autoresponderConfig.permitted_nodes_count - 1)
+            if (i < ownConfig.permitted_nodes_count - 1)
                 strcat(response->get_autoresponder_permittednodes_response, ", ");
         }
     }
@@ -175,9 +178,9 @@ void AutoresponderModule::handleGetConfigPermittedNodes(const meshtastic_MeshPac
 void AutoresponderModule::handleSetConfigMessage(const char *message)
 {
     if (*message) {
-        strncpy(autoresponderConfig.response_text, message, sizeof(autoresponderConfig.response_text));
-        autoresponderConfig.bootcount_since_enabled = 0; // Reset the boot count
-        saveProtoForModule();
+        strncpy(ownConfig.response_text, message, sizeof(ownConfig.response_text));
+        ownConfig.bootcount_since_enabled = 0; // Reset the boot count
+        saveOwnConfig();
         LOG_DEBUG("Autoresponder: setting message to \"%s\"\n", message);
     }
 }
@@ -187,11 +190,11 @@ void AutoresponderModule::handleSetConfigMessage(const char *message)
 void AutoresponderModule::handleSetConfigPermittedNodes(const char *rawString)
 {
     char nodeIDBuilder[9]{};
-    nodeIDBuilder[8] = '\0';                       // Pre-set the null term.
-    autoresponderConfig.permitted_nodes_count = 0; // Invalidate the previous list of nodes
-    uint8_t n = 0;                                 // Iterator for NodeID builder
-    uint8_t r = 0;                                 // Iterator for rawString
-    uint8_t p = 0;                                 // Iterator for the permitted nodes list (in protobuf)
+    nodeIDBuilder[8] = '\0';             // Pre-set the null term.
+    ownConfig.permitted_nodes_count = 0; // Invalidate the previous list of nodes
+    uint8_t n = 0;                       // Iterator for NodeID builder
+    uint8_t r = 0;                       // Iterator for rawString
+    uint8_t p = 0;                       // Iterator for the permitted nodes list (in protobuf)
     LOG_DEBUG("Autoresponder: parsing NodeIDs ");
     do {
         // Grab the next character from the raw list
@@ -206,10 +209,10 @@ void AutoresponderModule::handleSetConfigPermittedNodes(const char *rawString)
 
             // If we've got enough hex-chars for a 32bit number
             if (n == 8) {
-                autoresponderConfig.permitted_nodes[p] = (uint32_t)std::stoul(nodeIDBuilder, nullptr, 16); // Parse hex string
-                LOG_DEBUG("%s=%zu,", nodeIDBuilder, autoresponderConfig.permitted_nodes[p]);               // Log decoded value
+                ownConfig.permitted_nodes[p] = (uint32_t)std::stoul(nodeIDBuilder, nullptr, 16); // Parse hex string
+                LOG_DEBUG("%s=%zu,", nodeIDBuilder, ownConfig.permitted_nodes[p]);               // Log decoded value
                 // Increment counters (for array in protobufs)
-                autoresponderConfig.permitted_nodes_count++;
+                ownConfig.permitted_nodes_count++;
                 p++;
                 // Reset iterator (NodeID building)
                 n = 0;
@@ -221,15 +224,15 @@ void AutoresponderModule::handleSetConfigPermittedNodes(const char *rawString)
     } while (r < strlen(rawString)); // Stop if we run out of raw string input
     LOG_DEBUG("\n");                 // Close this log line
 
-    autoresponderConfig.bootcount_since_enabled = 0; // Reset the boot count
-    saveProtoForModule();
+    ownConfig.bootcount_since_enabled = 0; // Reset the boot count
+    saveOwnConfig();
 }
 
 // A DM arrived from the mesh. Maybe send an autoresponse?
 void AutoresponderModule::handleDM(const meshtastic_MeshPacket &mp)
 {
     // Abort if not enabled for DMs
-    if (!moduleConfig.autoresponder.enabled_dm)
+    if (!modConfig.enabled_dm)
         return;
 
     // Abort if we already responded to this node
@@ -246,7 +249,7 @@ void AutoresponderModule::handleDM(const meshtastic_MeshPacket &mp)
 
     // Send the auto-response, mark that we're waiting for an ACK
     LOG_DEBUG("Autoresponder: responding to a message via DM\n");
-    sendText(mp.from, mp.channel, autoresponderConfig.response_text, true);
+    sendText(mp.from, mp.channel, ownConfig.response_text, true);
     respondingTo = mp.from; // Record the original sender
     waitingForAck = true;
     wasDM = true; // Indicate that a successful ACK should add this user to the heardInDM set
@@ -256,7 +259,7 @@ void AutoresponderModule::handleDM(const meshtastic_MeshPacket &mp)
 void AutoresponderModule::handleChannel(const meshtastic_MeshPacket &mp)
 {
     // ABORT if in-channel response is disabled
-    if (!moduleConfig.autoresponder.enabled_in_channel)
+    if (!modConfig.enabled_in_channel)
         return;
 
     // ABORT if not primary channnel
@@ -299,11 +302,11 @@ void AutoresponderModule::handleChannel(const meshtastic_MeshPacket &mp)
 
     // Send the auto-response, then mark that we're waiting for an ACK
     LOG_DEBUG("Autoresponder: responding to a message in channel\n");
-    sendText(NODENUM_BROADCAST, 0, autoresponderConfig.response_text, true); // Respond on primary channel
-    respondingTo = mp.from;                                                  // Record the original sender
-    responsesInChannelToday++;                                               // Increment "overall" in-channel message count
-    prevInChannelResponseMs = now;                                           // Record time for "overall" in-channel rate limit
-    waitingForAck = true;                                                    // Start listening for an ACK
+    sendText(NODENUM_BROADCAST, 0, ownConfig.response_text, true); // Respond on primary channel
+    respondingTo = mp.from;                                        // Record the original sender
+    responsesInChannelToday++;                                     // Increment "overall" in-channel message count
+    prevInChannelResponseMs = now;                                 // Record time for "overall" in-channel rate limit
+    waitingForAck = true;                                          // Start listening for an ACK
     wasDM = false; // Indicate that a successful ACK should add this user to the heardInChannel list
 }
 
@@ -352,58 +355,62 @@ void AutoresponderModule::sendText(NodeNum dest, ChannelIndex channel, const cha
     outgoingId = p->id;
 }
 
-// Load the bulk config (separate file, not config.proto)
-void AutoresponderModule::loadProtoForModule()
+// Load our own config (separate file, not module_config.proto)
+void AutoresponderModule::loadOwnConfig()
 {
     // Attempt to load the proto file into RAM
     LoadFileResult result;
-    result = nodeDB->loadProto(autoresponderConfigFile, meshtastic_AutoresponderConfig_size,
-                               sizeof(meshtastic_AutoresponderConfig), &meshtastic_AutoresponderConfig_msg, &autoresponderConfig);
+    result = nodeDB->loadProto(ownConfigFile, meshtastic_AutoresponderConfig_size, sizeof(meshtastic_AutoresponderConfig),
+                               &meshtastic_AutoresponderConfig_msg, &ownConfig);
 
     // If load failed, set default values for the config in RAM
     if (result != LoadFileResult::SUCCESS)
-        setDefaultConfig();
+        setDefaultConfigInRAM();
 }
 
-// Use default settings for the bulk config (separate file, not config.proto)
+// Load
+
+// Use default settings for our own config (separate file, not module_config.proto)
 // File was corrupt? Not yet present?
-void AutoresponderModule::setDefaultConfig()
+void AutoresponderModule::setDefaultConfigInRAM()
 {
-    LOG_INFO("%s not loaded. Autoresponder using default config\n", autoresponderConfigFile);
-    memset(autoresponderConfig.response_text, 0,
-           sizeof(autoresponderConfig.response_text)); // Default response text
-    memset(autoresponderConfig.permitted_nodes, 0,
-           sizeof(autoresponderConfig.permitted_nodes)); // Empty "permitted nodes" array
-    autoresponderConfig.bootcount_since_enabled = 0;
+    LOG_INFO("%s not loaded. Autoresponder using default config\n", ownConfigFile);
+    memset(ownConfig.response_text, 0,
+           sizeof(ownConfig.response_text)); // Default response text
+    memset(ownConfig.permitted_nodes, 0,
+           sizeof(ownConfig.permitted_nodes)); // Empty "permitted nodes" array
+    ownConfig.bootcount_since_enabled = 0;     // Reset boot count
 }
 
-// Save the bulk config (separate file, not config.proto) from RAM back to file
-void AutoresponderModule::saveProtoForModule()
+// Save our own config (separate file, not module_config.proto) from RAM back to file
+void AutoresponderModule::saveOwnConfig()
 {
-    LOG_INFO("Autoresponder: saving config\n");
 
 #ifdef FS
     FS.mkdir("/prefs");
 #endif
 
     // Attempt to save the module's separate config file
-    if (!nodeDB->saveProto(autoresponderConfigFile, meshtastic_AutoresponderConfig_size, &meshtastic_AutoresponderConfig_msg,
-                           &autoresponderConfig))
-        LOG_ERROR("Couldn't save %s\n", autoresponderConfigFile);
+    if (!nodeDB->saveProto(ownConfigFile, meshtastic_AutoresponderConfig_size, &meshtastic_AutoresponderConfig_msg, &ownConfig))
+        LOG_ERROR("Couldn't save %s\n", ownConfigFile);
+}
 
-    return;
+// Save the shared module config (module_config.proto)
+void AutoresponderModule::saveModConfig()
+{
+    nodeDB->saveToDisk(SEGMENT_MODULECONFIG);
 }
 
 // Is this node in the list of "permitted nodes"?
 bool AutoresponderModule::isNodePermitted(NodeNum node)
 {
     // If list empty, all nodes allowed
-    if (autoresponderConfig.permitted_nodes_count == 0)
+    if (ownConfig.permitted_nodes_count == 0)
         return true;
 
     // Check to see if node argument is in permitted_nodes[]
-    for (pb_size_t i = 0; i < autoresponderConfig.permitted_nodes_count; i++) {
-        if (autoresponderConfig.permitted_nodes[i] == node)
+    for (pb_size_t i = 0; i < ownConfig.permitted_nodes_count; i++) {
+        if (ownConfig.permitted_nodes[i] == node)
             return true;
     }
 
@@ -422,20 +429,19 @@ bool AutoresponderModule::isPrimaryPublic()
 void AutoresponderModule::bootCounting()
 {
     // ABORT: if no need to count boots currently
-    if (!moduleConfig.autoresponder.enabled_in_channel &&
-        (!moduleConfig.autoresponder.enabled_dm || !moduleConfig.autoresponder.should_dm_expire))
+    if (!modConfig.enabled_in_channel && (!modConfig.enabled_dm || !modConfig.should_dm_expire))
         return;
 
-    uint32_t &bootcount = autoresponderConfig.bootcount_since_enabled; // Shortcut for annoyingly long setting
+    uint32_t &bootcount = ownConfig.bootcount_since_enabled; // Shortcut for annoyingly long setting
 
     // Not disabled yet, just log the current count
     if (bootcount < expireAfterBootNum) {
         bootcount++;
         LOG_DEBUG("Autoresponder: Boot number %zu of %zu before autoresponse is disabled. (in channel", bootcount,
                   expireAfterBootNum);
-        if (moduleConfig.autoresponder.should_dm_expire && moduleConfig.autoresponder.expiration_hours)
+        if (modConfig.should_dm_expire && modConfig.expiration_hours)
             LOG_DEBUG(" and for DMs");
-        saveProtoForModule();
+        saveOwnConfig();
         LOG_DEBUG(")\n");
     }
     // Disable if too many boots
@@ -444,12 +450,12 @@ void AutoresponderModule::bootCounting()
         LOG_WARN("Autoresponder: Booted %zu times since module enabled. Disabling response to prevent "
                  "mesh flooding.\n",
                  bootcount);
-        moduleConfig.autoresponder.enabled_in_channel = false;
-        if (moduleConfig.autoresponder.should_dm_expire)
-            moduleConfig.autoresponder.enabled_dm = false;
-        nodeDB->saveToDisk(SEGMENT_MODULECONFIG); // Save module config
+        modConfig.enabled_in_channel = false;
+        if (modConfig.should_dm_expire)
+            modConfig.enabled_dm = false;
+        saveModConfig(); // Save "enabled" values
         bootcount = 0;
-        saveProtoForModule(); // Save boot count
+        saveOwnConfig(); // Save boot count
     }
 }
 
@@ -463,8 +469,8 @@ int32_t AutoresponderModule::runOnce()
     // Determine intervals
     uint32_t intervalClearDM = MS_IN_MINUTE * repeatDMMinutes;
     uint32_t intervalDailyTasks = MS_IN_MINUTE * 24;
-    uint32_t intervalClearChannel = MS_IN_MINUTE * max(moduleConfig.autoresponder.repeat_hours,
-                                                       (isPrimaryPublic() ? minRepeatPubChanHours : minRepeatPrivChanHours));
+    uint32_t intervalClearChannel =
+        MS_IN_MINUTE * max(modConfig.repeat_hours, (isPrimaryPublic() ? minRepeatPubChanHours : minRepeatPrivChanHours));
 
     uint32_t now = millis();
 
@@ -472,7 +478,7 @@ int32_t AutoresponderModule::runOnce()
 
     // ----- Periodic Task -----
     // Clear the heardInDM set, allow repeated responses
-    if (moduleConfig.autoresponder.enabled_dm) {
+    if (modConfig.enabled_dm) {
         if (now - prevClearDM > intervalClearDM) {
             prevClearDM = now;
             clearHeardInDM();
@@ -481,7 +487,7 @@ int32_t AutoresponderModule::runOnce()
 
     // ----- Periodic Task -----
     // Clear the heardInChannel set, allow repeated responses
-    if (moduleConfig.autoresponder.enabled_in_channel) {
+    if (modConfig.enabled_in_channel) {
         if (now - prevClearChannel > intervalClearChannel) {
             prevClearChannel = now;
             clearHeardInChannel();
@@ -497,25 +503,24 @@ int32_t AutoresponderModule::runOnce()
 
     // ----- Single-shot Task -----
     // Disable in-channel response (time limit)
-    if (moduleConfig.autoresponder.enabled_in_channel) {
-        const uint32_t &userValue = moduleConfig.autoresponder.expiration_hours;
-        const uint32_t &limit = maxExpirationChannelHours;
+    if (modConfig.enabled_in_channel) {
 
+        // Determing whether user's expiration value is acceptable
         uint32_t expirationHours;
-        if (userValue > 0 && userValue < limit)
-            expirationHours = userValue;
+        if (modConfig.expiration_hours > 0 && modConfig.expiration_hours < maxExpirationChannelHours)
+            expirationHours = modConfig.expiration_hours;
         else
-            expirationHours = limit;
+            expirationHours = maxExpirationChannelHours;
 
+        // Check if task is due
         if (now > expirationHours * MS_IN_MINUTE)
             handleExpiredChannel();
     }
 
     // ----- Single-shot Task -----
     // Disable DM response (time limit, optional)
-    if (moduleConfig.autoresponder.enabled_dm && moduleConfig.autoresponder.should_dm_expire &&
-        moduleConfig.autoresponder.expiration_hours > 0) {
-        if (now > moduleConfig.autoresponder.expiration_hours * MS_IN_MINUTE)
+    if (modConfig.enabled_dm && modConfig.should_dm_expire && modConfig.expiration_hours > 0) {
+        if (now > modConfig.expiration_hours * MS_IN_MINUTE)
             handleExpiredDM();
     }
 
@@ -549,18 +554,18 @@ void AutoresponderModule::handleDailyTasks()
 void AutoresponderModule::handleExpiredChannel()
 {
     LOG_INFO("In-channel responses disabled, expiry time reached.\n");
-    moduleConfig.autoresponder.enabled_in_channel = false;
-    nodeDB->saveToDisk(SEGMENT_MODULECONFIG);
-    autoresponderConfig.bootcount_since_enabled = 0;
-    saveProtoForModule();
+    modConfig.enabled_in_channel = false;
+    saveModConfig();
+    ownConfig.bootcount_since_enabled = 0;
+    saveOwnConfig();
 }
 
 // Disables DM responses, if DMs responses are set to expire
 void AutoresponderModule::handleExpiredDM()
 {
     LOG_INFO("DM responses disabled, expiry time reached.\n");
-    moduleConfig.autoresponder.enabled_dm = false;
-    nodeDB->saveToDisk(SEGMENT_MODULECONFIG);
-    autoresponderConfig.bootcount_since_enabled = 0;
-    saveProtoForModule();
+    modConfig.enabled_dm = false;
+    saveModConfig();
+    ownConfig.bootcount_since_enabled = 0;
+    saveOwnConfig();
 }

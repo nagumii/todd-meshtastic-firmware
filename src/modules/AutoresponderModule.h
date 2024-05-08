@@ -21,12 +21,13 @@ class AutoresponderModule : public MeshModule, protected concurrency::OSThread
     void handleChannel(const meshtastic_MeshPacket &mp); // Reply if message meets the criteria for in-channel response
     void checkForAck(const meshtastic_MeshPacket &mp);   // Check if an outgoing message was received
     void sendText(NodeNum dest, ChannelIndex channel, const char *message, bool wantReplies); // Send a text message over the mesh
-    bool isPrimaryPublic();
+    bool isPrimaryPublic(); // Is the device's primary channel public? (default longfast)
 
     // Get and set config
-    void loadProtoForModule();
-    void saveProtoForModule();
-    void setDefaultConfig();
+    void loadOwnConfig();
+    void saveOwnConfig();
+    void saveModConfig();
+    void setDefaultConfigInRAM();
     void handleGetConfigMessage(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response);
     void handleGetConfigPermittedNodes(const meshtastic_MeshPacket &req, meshtastic_AdminMessage *response);
     void handleSetConfigMessage(const char *message);
