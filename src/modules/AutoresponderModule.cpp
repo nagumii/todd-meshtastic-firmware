@@ -450,10 +450,10 @@ void AutoresponderModule::bootCounting()
         bootcount++;
         LOG_DEBUG("Autoresponder: Boot number %zu of %zu before autoresponse is disabled. (in channel", bootcount,
                   expireAfterBootNum);
-        if (modConfig.should_dm_expire && modConfig.expiration_hours)
+        if (modConfig.enabled_dm && modConfig.should_dm_expire && modConfig.expiration_hours)
             LOG_DEBUG(" and for DMs");
-        saveOwnConfig();
         LOG_DEBUG(")\n");
+        saveOwnConfig();
     }
     // Disable if too many boots
     else {
