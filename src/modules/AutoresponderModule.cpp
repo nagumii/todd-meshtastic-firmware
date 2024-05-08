@@ -39,7 +39,10 @@ AutoresponderModule::AutoresponderModule() : MeshModule("Autoresponder"), OSThre
         strcpy(channelName, channels.getByIndex(0).settings.name);
 
         // Debug output at boot
-        LOG_INFO("Autoresponder module enabled\n");
+        if (moduleConfig.autoresponder.enabled_dm)
+            LOG_INFO("Autoresponder module enabled for DMs\n");
+        if (moduleConfig.autoresponder.enabled_in_channel)
+            LOG_INFO("Autoresponder: module enabled in channel\n");
         if (autoresponderConfig.permitted_nodes_count > 0) {
             LOG_INFO("Autoresponder: only responding to node ID ");
             for (uint8_t i = 0; i < autoresponderConfig.permitted_nodes_count; i++) {
@@ -428,11 +431,11 @@ void AutoresponderModule::bootCounting()
     // Not disabled yet, just log the current count
     if (bootcount < expireAfterBootNum) {
         bootcount++;
-        saveProtoForModule();
         LOG_DEBUG("Autoresponder: Boot number %zu of %zu before autoresponse is disabled. (in channel", bootcount,
                   expireAfterBootNum);
         if (moduleConfig.autoresponder.should_dm_expire && moduleConfig.autoresponder.expiration_hours)
             LOG_DEBUG(" and for DMs");
+        saveProtoForModule();
         LOG_DEBUG(")\n");
     }
     // Disable if too many boots
@@ -495,10 +498,10 @@ int32_t AutoresponderModule::runOnce()
     // ----- Single-shot Task -----
     // Disable in-channel response (time limit)
     if (moduleConfig.autoresponder.enabled_in_channel) {
-        uint32_t expirationHours;
         const uint32_t &userValue = moduleConfig.autoresponder.expiration_hours;
         const uint32_t &limit = maxExpirationChannelHours;
 
+        uint32_t expirationHours;
         if (userValue > 0 && userValue < limit)
             expirationHours = userValue;
         else
@@ -548,6 +551,8 @@ void AutoresponderModule::handleExpiredChannel()
     LOG_INFO("In-channel responses disabled, expiry time reached.\n");
     moduleConfig.autoresponder.enabled_in_channel = false;
     nodeDB->saveToDisk(SEGMENT_MODULECONFIG);
+    autoresponderConfig.bootcount_since_enabled = 0;
+    saveProtoForModule();
 }
 
 // Disables DM responses, if DMs responses are set to expire
@@ -556,4 +561,6 @@ void AutoresponderModule::handleExpiredDM()
     LOG_INFO("DM responses disabled, expiry time reached.\n");
     moduleConfig.autoresponder.enabled_dm = false;
     nodeDB->saveToDisk(SEGMENT_MODULECONFIG);
+    autoresponderConfig.bootcount_since_enabled = 0;
+    saveProtoForModule();
 }
