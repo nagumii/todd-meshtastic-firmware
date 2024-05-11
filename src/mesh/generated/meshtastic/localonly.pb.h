@@ -84,6 +84,9 @@ typedef struct _meshtastic_LocalModuleConfig {
     /* Paxcounter Config */
     bool has_paxcounter;
     meshtastic_ModuleConfig_PaxcounterConfig paxcounter;
+    /* Autoresponder Config */
+    bool has_autoresponder;
+    meshtastic_ModuleConfig_AutoresponderConfig autoresponder;
 } meshtastic_LocalModuleConfig;
 
 
@@ -93,9 +96,9 @@ extern "C" {
 
 /* Initializer values for message structs */
 #define meshtastic_LocalConfig_init_default      {false, meshtastic_Config_DeviceConfig_init_default, false, meshtastic_Config_PositionConfig_init_default, false, meshtastic_Config_PowerConfig_init_default, false, meshtastic_Config_NetworkConfig_init_default, false, meshtastic_Config_DisplayConfig_init_default, false, meshtastic_Config_LoRaConfig_init_default, false, meshtastic_Config_BluetoothConfig_init_default, 0}
-#define meshtastic_LocalModuleConfig_init_default {false, meshtastic_ModuleConfig_MQTTConfig_init_default, false, meshtastic_ModuleConfig_SerialConfig_init_default, false, meshtastic_ModuleConfig_ExternalNotificationConfig_init_default, false, meshtastic_ModuleConfig_StoreForwardConfig_init_default, false, meshtastic_ModuleConfig_RangeTestConfig_init_default, false, meshtastic_ModuleConfig_TelemetryConfig_init_default, false, meshtastic_ModuleConfig_CannedMessageConfig_init_default, 0, false, meshtastic_ModuleConfig_AudioConfig_init_default, false, meshtastic_ModuleConfig_RemoteHardwareConfig_init_default, false, meshtastic_ModuleConfig_NeighborInfoConfig_init_default, false, meshtastic_ModuleConfig_AmbientLightingConfig_init_default, false, meshtastic_ModuleConfig_DetectionSensorConfig_init_default, false, meshtastic_ModuleConfig_PaxcounterConfig_init_default}
+#define meshtastic_LocalModuleConfig_init_default {false, meshtastic_ModuleConfig_MQTTConfig_init_default, false, meshtastic_ModuleConfig_SerialConfig_init_default, false, meshtastic_ModuleConfig_ExternalNotificationConfig_init_default, false, meshtastic_ModuleConfig_StoreForwardConfig_init_default, false, meshtastic_ModuleConfig_RangeTestConfig_init_default, false, meshtastic_ModuleConfig_TelemetryConfig_init_default, false, meshtastic_ModuleConfig_CannedMessageConfig_init_default, 0, false, meshtastic_ModuleConfig_AudioConfig_init_default, false, meshtastic_ModuleConfig_RemoteHardwareConfig_init_default, false, meshtastic_ModuleConfig_NeighborInfoConfig_init_default, false, meshtastic_ModuleConfig_AmbientLightingConfig_init_default, false, meshtastic_ModuleConfig_DetectionSensorConfig_init_default, false, meshtastic_ModuleConfig_PaxcounterConfig_init_default, false, meshtastic_ModuleConfig_AutoresponderConfig_init_default}
 #define meshtastic_LocalConfig_init_zero         {false, meshtastic_Config_DeviceConfig_init_zero, false, meshtastic_Config_PositionConfig_init_zero, false, meshtastic_Config_PowerConfig_init_zero, false, meshtastic_Config_NetworkConfig_init_zero, false, meshtastic_Config_DisplayConfig_init_zero, false, meshtastic_Config_LoRaConfig_init_zero, false, meshtastic_Config_BluetoothConfig_init_zero, 0}
-#define meshtastic_LocalModuleConfig_init_zero   {false, meshtastic_ModuleConfig_MQTTConfig_init_zero, false, meshtastic_ModuleConfig_SerialConfig_init_zero, false, meshtastic_ModuleConfig_ExternalNotificationConfig_init_zero, false, meshtastic_ModuleConfig_StoreForwardConfig_init_zero, false, meshtastic_ModuleConfig_RangeTestConfig_init_zero, false, meshtastic_ModuleConfig_TelemetryConfig_init_zero, false, meshtastic_ModuleConfig_CannedMessageConfig_init_zero, 0, false, meshtastic_ModuleConfig_AudioConfig_init_zero, false, meshtastic_ModuleConfig_RemoteHardwareConfig_init_zero, false, meshtastic_ModuleConfig_NeighborInfoConfig_init_zero, false, meshtastic_ModuleConfig_AmbientLightingConfig_init_zero, false, meshtastic_ModuleConfig_DetectionSensorConfig_init_zero, false, meshtastic_ModuleConfig_PaxcounterConfig_init_zero}
+#define meshtastic_LocalModuleConfig_init_zero   {false, meshtastic_ModuleConfig_MQTTConfig_init_zero, false, meshtastic_ModuleConfig_SerialConfig_init_zero, false, meshtastic_ModuleConfig_ExternalNotificationConfig_init_zero, false, meshtastic_ModuleConfig_StoreForwardConfig_init_zero, false, meshtastic_ModuleConfig_RangeTestConfig_init_zero, false, meshtastic_ModuleConfig_TelemetryConfig_init_zero, false, meshtastic_ModuleConfig_CannedMessageConfig_init_zero, 0, false, meshtastic_ModuleConfig_AudioConfig_init_zero, false, meshtastic_ModuleConfig_RemoteHardwareConfig_init_zero, false, meshtastic_ModuleConfig_NeighborInfoConfig_init_zero, false, meshtastic_ModuleConfig_AmbientLightingConfig_init_zero, false, meshtastic_ModuleConfig_DetectionSensorConfig_init_zero, false, meshtastic_ModuleConfig_PaxcounterConfig_init_zero, false, meshtastic_ModuleConfig_AutoresponderConfig_init_zero}
 
 /* Field tags (for use in manual encoding/decoding) */
 #define meshtastic_LocalConfig_device_tag        1
@@ -120,6 +123,7 @@ extern "C" {
 #define meshtastic_LocalModuleConfig_ambient_lighting_tag 12
 #define meshtastic_LocalModuleConfig_detection_sensor_tag 13
 #define meshtastic_LocalModuleConfig_paxcounter_tag 14
+#define meshtastic_LocalModuleConfig_autoresponder_tag 15
 
 /* Struct field encoding specification for nanopb */
 #define meshtastic_LocalConfig_FIELDLIST(X, a) \
@@ -155,7 +159,8 @@ X(a, STATIC,   OPTIONAL, MESSAGE,  remote_hardware,  10) \
 X(a, STATIC,   OPTIONAL, MESSAGE,  neighbor_info,    11) \
 X(a, STATIC,   OPTIONAL, MESSAGE,  ambient_lighting,  12) \
 X(a, STATIC,   OPTIONAL, MESSAGE,  detection_sensor,  13) \
-X(a, STATIC,   OPTIONAL, MESSAGE,  paxcounter,       14)
+X(a, STATIC,   OPTIONAL, MESSAGE,  paxcounter,       14) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  autoresponder,    15)
 #define meshtastic_LocalModuleConfig_CALLBACK NULL
 #define meshtastic_LocalModuleConfig_DEFAULT NULL
 #define meshtastic_LocalModuleConfig_mqtt_MSGTYPE meshtastic_ModuleConfig_MQTTConfig
@@ -171,6 +176,7 @@ X(a, STATIC,   OPTIONAL, MESSAGE,  paxcounter,       14)
 #define meshtastic_LocalModuleConfig_ambient_lighting_MSGTYPE meshtastic_ModuleConfig_AmbientLightingConfig
 #define meshtastic_LocalModuleConfig_detection_sensor_MSGTYPE meshtastic_ModuleConfig_DetectionSensorConfig
 #define meshtastic_LocalModuleConfig_paxcounter_MSGTYPE meshtastic_ModuleConfig_PaxcounterConfig
+#define meshtastic_LocalModuleConfig_autoresponder_MSGTYPE meshtastic_ModuleConfig_AutoresponderConfig
 
 extern const pb_msgdesc_t meshtastic_LocalConfig_msg;
 extern const pb_msgdesc_t meshtastic_LocalModuleConfig_msg;
@@ -182,7 +188,7 @@ extern const pb_msgdesc_t meshtastic_LocalModuleConfig_msg;
 /* Maximum encoded size of messages (where known) */
 #define MESHTASTIC_MESHTASTIC_LOCALONLY_PB_H_MAX_SIZE meshtastic_LocalModuleConfig_size
 #define meshtastic_LocalConfig_size              537
-#define meshtastic_LocalModuleConfig_size        663
+#define meshtastic_LocalModuleConfig_size        681
 
 #ifdef __cplusplus
 } /* extern "C" */
