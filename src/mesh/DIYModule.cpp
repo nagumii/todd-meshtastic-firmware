@@ -1,4 +1,7 @@
 #include "DIYModule.h"
+
+#if MESHTASTIC_INCLUDE_DIYMODULES
+
 #include "MeshService.h"
 #include "Router.h"
 
@@ -236,3 +239,5 @@ uint32_t DIYModule::getDataHash(void *data, uint32_t size)
 
     return hash;
 }
+
+#endif // MESHTASTIC_INCLUDE_DIYMODULES

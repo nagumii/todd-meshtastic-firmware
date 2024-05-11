@@ -1,5 +1,9 @@
 #pragma once
+
 #include "DIYModule.h"
+
+#if MESHTASTIC_INCLUDE_DIYMODULES && MESHTASTIC_INCLUDE_AUTORESPONDER
+
 #include "concurrency/OSThread.h"
 #include <unordered_set>
 
@@ -57,3 +61,5 @@ class AutoresponderModule : public DIYModule, protected concurrency::OSThread
     uint16_t responsesInChannelToday = 0;                  // How many responses have been sent in-channel, within last 24 hours
     uint32_t prevInChannelResponseMs = 0;                  // When was the previous in-channel response sent?
 };
+
+#endif // MESHTASTIC_INCLUDE_AUTORESPONDER

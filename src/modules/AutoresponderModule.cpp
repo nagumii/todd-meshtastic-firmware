@@ -1,4 +1,7 @@
 #include "AutoresponderModule.h"
+
+#if MESHTASTIC_INCLUDE_DIYMODULES && MESHTASTIC_INCLUDE_AUTORESPONDER
+
 #include "MeshService.h"
 #include "NodeDB.h"
 #include "Router.h"
@@ -655,3 +658,5 @@ void AutoresponderModule::handleExpiredDM()
     arConfig.bootcount = 0;
     saveData<AutoresponderConfig>(&arConfig);
 }
+
+#endif

@@ -1,5 +1,9 @@
 #pragma once
 
+#include "configuration.h"
+
+#if MESHTASTIC_INCLUDE_DIYMODULES
+
 #include "FSCommon.h"
 #include "MeshModule.h"
 
@@ -152,3 +156,5 @@ template <typename T> void DIYModule::saveData(T *data)
     LOG_ERROR("ERROR: Filesystem not implemented\n");
 #endif
 }
+
+#endif // MESHTASTCIC_INCLUDE_DIYMODULES
