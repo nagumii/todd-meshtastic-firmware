@@ -364,6 +364,10 @@ void AutoresponderModule::handleDM(const meshtastic_MeshPacket &mp)
     if (!arConfig.enabled_dm)
         return;
 
+    // ABORT if the message was from our node
+    if (!mp.from)
+        return;
+
     // Abort if we already responded to this node
     if (heardInDM.find(mp.from) != heardInDM.end()) { // (Is NodeNum in the set?)
         LOG_DEBUG("Autoresponder: ignoring DM. Already responded to this node\n");
@@ -393,6 +397,10 @@ void AutoresponderModule::handleChannel(const meshtastic_MeshPacket &mp)
 
     // ABORT if not primary channnel
     if (mp.channel != 0)
+        return;
+
+    // ABORT if the message was from our node
+    if (!mp.from)
         return;
 
     // ABORT if too many responses in channel within past 24 hours
