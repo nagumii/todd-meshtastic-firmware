@@ -2,15 +2,17 @@
 #include "MeshService.h"
 #include "Router.h"
 
-// Allow these static members to be used here in method definitions
+// Allows these static members to be used here for method definitions
 char *DIYModule::currentText;
 char *DIYModule::requestedArg;
 
 // Container of all classes derived from DIYModule
 std::vector<DIYModule *> *DIYModule::diyModules;
 
+// Is the dynamic memory for process arguments currently allocated?
 static bool argMemoryAllocated = false;
 
+// Constructor
 DIYModule::DIYModule(const char *_name, ControlStyle style) : MeshModule(_name), style(style)
 {
     // Add this module instance to the vector
@@ -24,6 +26,7 @@ DIYModule::DIYModule(const char *_name, ControlStyle style) : MeshModule(_name),
     }
 }
 
+// Intercept a message which the user has sent, if it appears intended for a DIY module
 ProcessMessage DIYModule::interceptSentText(meshtastic_MeshPacket &mp, RxSource src)
 {
     if (src != RX_SRC_USER) {
@@ -36,9 +39,11 @@ ProcessMessage DIYModule::interceptSentText(meshtastic_MeshPacket &mp, RxSource 
         return ProcessMessage::CONTINUE;
     }
 
+    // Grab a copy of the outgoing message
     currentText = new char[mp.decoded.payload.size + 1]; // +1 for null term
     strcpy(currentText, (char *)mp.decoded.payload.bytes);
 
+    // Has a diy module taken ownership of this message?
     bool intercepted = false;
 
     // For each module
@@ -64,13 +69,14 @@ ProcessMessage DIYModule::interceptSentText(meshtastic_MeshPacket &mp, RxSource 
             if (r != ERRNO_OK)
                 LOG_DEBUG("DIYModule can't send status to phone");
 
-            intercepted = true;
+            intercepted = true; // DIY module has consumed this message - don't send it to the mesh
             break;
         }
     }
 
-    delete[] currentText;
+    delete[] currentText; // Delete the copy we made of the original outgoing message
 
+    // Free memory, which might have been allocated by getArg()
     if (argMemoryAllocated) {
         delete[] requestedArg;
         argMemoryAllocated = false;
@@ -79,14 +85,17 @@ ProcessMessage DIYModule::interceptSentText(meshtastic_MeshPacket &mp, RxSource 
     return intercepted ? ProcessMessage::STOP : ProcessMessage::CONTINUE;
 }
 
+// Send info back to user, appearing as a text message in a mesh channel
 void DIYModule::sendPhoneFeedback(const char *text, const char *channelName)
 {
+    // Determine which channel this message should appear in
     meshtastic_Channel feedbackChannel;
     if (style == BY_NAME)
         feedbackChannel = channels.getByName(channelName);
     else                                                      // OWN_CHANNEL
         feedbackChannel = channels.getByName(ownChannelName); // module name
 
+    // Load the info into a new packet
     meshtastic_MeshPacket *feedback = router->allocForSending();
     feedback->to = myNodeInfo.my_node_num;
     feedback->from = NODENUM_BROADCAST;
@@ -95,41 +104,50 @@ void DIYModule::sendPhoneFeedback(const char *text, const char *channelName)
     feedback->decoded.payload.size = strlen(text);
     memcpy(feedback->decoded.payload.bytes, text, feedback->decoded.payload.size);
 
+    // Send the new packet off to the phone
     LOG_DEBUG("Sent feedback to phone: \"%s\"\n", text);
     service.sendToPhone(feedback);
 }
 
+// Check if a mesh channel exists
 bool DIYModule::channelExists(const char *channelName)
 {
     int8_t allegedIndex = channels.getByName(channelName).index;
     return strcmp(channels.getByIndex(allegedIndex).settings.name, channelName) == 0; // Did getByName() find the correct channel?
 }
 
+// Check which channel a message was intercepted from
 bool DIYModule::isFromChannel(const meshtastic_MeshPacket &mp, const char *channelName)
 {
     return strcmp(channelName, channels.getByIndex(mp.channel).settings.name) == 0; // Compare names only
 }
 
+// Check if message was intercepted from the public longfast channel
 bool DIYModule::isFromPublicChannel(const meshtastic_MeshPacket &mp)
 {
     return isFromChannel(mp, "");
 }
 
+// Get the name of the channel to which the message was sent
 const char *DIYModule::getChannelName(const meshtastic_MeshPacket &mp)
 {
     return channels.getByIndex(mp.channel).settings.name;
 }
 
+// Parse raw text as a true/false value
 bool DIYModule::parseBool(const char *raw)
 {
     return stringsMatch(raw, "true", false);
 }
 
+// Check if two strings match. Option to ignore the case when comparing
 bool DIYModule::stringsMatch(const char *s1, const char *s2, bool caseSensitive)
 {
+    // If different length, no match
     if (strlen(s1) != strlen(s2))
         return false;
 
+    // Compare character by character (possible case-insensitive)
     for (uint16_t i = 0; i <= strlen(s1); i++) {
         if (caseSensitive && s1[i] != s2[i])
             return false;
@@ -140,6 +158,14 @@ bool DIYModule::stringsMatch(const char *s1, const char *s2, bool caseSensitive)
     return true;
 }
 
+// Parse commands / data from an intercepted outgoing text message
+// Use inside handleSentText()
+// If module's ControlStyle is BY_NAME, messages are intercepted if getArg(0) matches the module name
+// If module's ControlStyle is OWN_CHANNEL, messages are intercepted from a mesh channel with the same name as the module
+// In this case, getArg(0) is the first command / piece of data
+// args are separated by space
+// To get a longer string, call getArg(num, true), where "num" is the argument to start from.
+// All text between this arg, and the end of the message, will be grabbed.
 char *DIYModule::getArg(uint8_t index, bool untilEnd)
 {
     // Free the existing memory, if still in use
@@ -199,6 +225,7 @@ char *DIYModule::getArg(uint8_t index, bool untilEnd)
     return requestedArg; // Really just for convenience. We always return requestedArg
 }
 
+// Used to verify integrity of data / settings saved to flash
 uint32_t DIYModule::getDataHash(void *data, uint32_t size)
 {
     uint32_t hash = 0;
@@ -209,121 +236,3 @@ uint32_t DIYModule::getDataHash(void *data, uint32_t size)
 
     return hash;
 }
-
-// void DIYModule::loadData(uint8_t *dest, uint32_t size)
-// {
-//     // Build the filepath using the module's name
-//     String filename = saveDirectory;
-//     filename += "/";
-//     filename += name;
-//     filename += ".data";
-
-// #ifdef FSCom
-
-//     // Check that the file *does* actually exist
-//     if (!FSCom.exists(filename)) {
-//         LOG_INFO("'%s' not found. Using default values\n", filename);
-//         // Todo: init struct
-//         return;
-//     }
-
-//     // Open the file
-//     auto f = FSCom.open(filename, FILE_O_READ);
-
-//     // If opened, start reading
-//     if (f) {
-//         LOG_INFO("Loading DIY module data '%s'\n", filename.c_str());
-
-//         // Read the actual data
-//         f.readBytes((char *)dest, size);
-
-//         // Read the hash
-//         uint32_t savedHash = 0;
-//         f.readBytes((char *)&savedHash, sizeof(savedHash));
-
-//         // Calculate hash of the loaded data, then compare with the saved hash
-//         uint32_t calculatedHash = getDataHash(dest, size);
-//         if (savedHash != calculatedHash) {
-//             LOG_WARN("'%s' is corrupt (hash mismatch). Using default values\n");
-//             // Todo: init with default values
-//         }
-
-//         f.close();
-//     } else {
-//         LOG_ERROR("Could not open / read %s\n", filename);
-//     }
-// #else
-//     LOG_ERROR("ERROR: Filesystem not implemented\n");
-//     state = LoadFileState::NO_FILESYSTEM;
-// #endif
-//     return;
-// }
-
-// uint32_t DIYModule::getDataHash(uint8_t *data, uint32_t size)
-// {
-//     uint32_t hash = 0;
-
-//     // Sum all bytes of the image buffer together
-//     for (uint32_t i = 0; i < size; i++)
-//         hash += data[i];
-
-//     return hash;
-// }
-
-// bool DIYModule::saveData(uint8_t *data, uint32_t size)
-// {
-//     // Build the filepath using the module's name
-//     String filename = saveDirectory;
-//     filename += "/";
-//     filename += name;
-//     filename += ".data";
-
-// #ifdef FSCom
-//     // Make the directory, if it doesn't exist
-//     if (!FSCom.exists(saveDirectory))
-//         FSCom.mkdir(saveDirectory);
-
-//     // Create a temporary filename, where we will write data, then later rename
-//     String filenameTmp = filename;
-//     filenameTmp += ".tmp";
-
-//     // Open the file
-//     auto f = FSCom.open(filenameTmp.c_str(), FILE_O_WRITE);
-
-//     // If it opened, start writing
-//     if (f) {
-//         // Calculate a hash of the data
-//         uint32_t hash = getDataHash((uint8_t *)data, size);
-
-//         f.write((uint8_t *)data, size);          // Write the actualy data
-//         f.write((uint8_t *)&hash, sizeof(hash)); // Append the hash
-
-//         f.flush();
-//         f.close();
-
-//         // Remove the old file (brief window of risk here()
-//         if (FSCom.exists(filename) && !FSCom.remove(filename)) {
-//             LOG_WARN("Can't remove old DIY module file\n");
-//         }
-
-//         // Rename the new (temporary) file to take place of the old
-//         if (!renameFile(filenameTmp.c_str(), filename.c_str())) {
-//             LOG_ERROR("Error: can't rename new  DIY module file\n");
-//         }
-//     } else {
-//         LOG_ERROR("Can't write DIY module file\n");
-// #ifdef ARCH_NRF52
-//         static uint8_t failedCounter = 0;
-//         failedCounter++;
-//         if (failedCounter >= 2) {
-//             LOG_ERROR("Failed to save DIY module file twice. Rebooting...\n");
-//             delay(100);
-//             NVIC_SystemReset();
-//         } else
-//             saveConfig(); // Recurse
-// #endif
-//     }
-// #else
-//     LOG_ERROR("ERROR: Filesystem not implemented\n");
-// #endif
-// }

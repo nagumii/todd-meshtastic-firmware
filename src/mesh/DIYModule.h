@@ -5,44 +5,46 @@
 
 class DIYModule : MeshModule
 {
-    static std::vector<DIYModule *> *diyModules;
+    static std::vector<DIYModule *> *diyModules; // Contains any DIY modules created
 
   public:
-    enum ControlStyle { BY_NAME, OWN_CHANNEL };
+    enum ControlStyle { BY_NAME, OWN_CHANNEL }; // Will the module listen everywhere, or in its own channel?
     DIYModule(const char *_name, ControlStyle style);
 
-    static ProcessMessage interceptSentText(meshtastic_MeshPacket &mp, RxSource src);
-    virtual void handleSentText(const meshtastic_MeshPacket &mp) {}
+    static ProcessMessage interceptSentText(meshtastic_MeshPacket &mp, RxSource src); // Hooks MeshService::sendToMesh
+    virtual void handleSentText(const meshtastic_MeshPacket &mp) {} // Override this to receive commands / data sent as mesh text
 
   protected:
-    void sendPhoneFeedback(const char *text, const char *channelName = "");
-    static bool stringsMatch(const char *s1, const char *s2, bool caseSensitive = true);
-    static char *getArg(uint8_t index, bool untilEnd = false);
+    void sendPhoneFeedback(const char *text, const char *channelName = ""); // Send info to user, appearing as mesh text message
+    static bool stringsMatch(const char *s1, const char *s2, bool caseSensitive = true); // Compare two strings
+    static char *getArg(uint8_t index, bool untilEnd = false); // Use inside handleSentText() to parse the command / data sent
 
-    static bool channelExists(const char *channelName);
-    static bool isFromChannel(const meshtastic_MeshPacket &mp, const char *channelName);
-    static bool isFromPublicChannel(const meshtastic_MeshPacket &mp);
-    static const char *getChannelName(const meshtastic_MeshPacket &mp);
-    bool parseBool(const char *raw);
+    static bool channelExists(const char *channelName);                                  // Check if a mesh channel exists
+    static bool isFromChannel(const meshtastic_MeshPacket &mp, const char *channelName); // Check if mesh packet came from channel
+    static bool isFromPublicChannel(const meshtastic_MeshPacket &mp);   // Check if mesh packet came from public longfast channel
+    static const char *getChannelName(const meshtastic_MeshPacket &mp); // Get the name of the channel from which a packet came
+    bool parseBool(const char *raw);                                    // Interpret a string as either true or false
 
-    ControlStyle style;
-    char ownChannelName[12]{0};
+    ControlStyle style; // Whether this modules should respond everwhere (using name as a command), or only in its own channel
+    char ownChannelName[12]{0}; // Shortened name for own channel, in case module name too long
 
     // Dynamic memory. Used by getArg. Freed at end of interceptSentText
     static char *currentText;
     static char *requestedArg;
 
+    // Save the modules config to flash (not using protobufs)
     template <typename T> void loadData(T *data);
     template <typename T> void saveData(T *data);
-    uint32_t getDataHash(void *data, uint32_t size);
+    uint32_t getDataHash(void *data, uint32_t size); // Used to confirm that data from flash is not corrupt
 
-    const char *saveDirectory = "/DIYModules";
+    const char *saveDirectory = "/DIYModules"; // Where in flash the module's config will be saved
 };
 
 // ======================
 //    Template methods
 // ======================
 
+// Load module's custom data & settings from flash. Doesn't use protobufs.
 template <typename T> void DIYModule::loadData(T *data)
 {
     // Build the filepath using the module's name
@@ -92,6 +94,7 @@ template <typename T> void DIYModule::loadData(T *data)
     return;
 }
 
+// Save module's custom data (settings?) to flash. Does use protobufs
 template <typename T> void DIYModule::saveData(T *data)
 {
     // Build the filepath using the module's name
