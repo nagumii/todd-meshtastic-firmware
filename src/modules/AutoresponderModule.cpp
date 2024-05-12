@@ -344,16 +344,16 @@ void AutoresponderModule::printHelp()
 {
 #define helpCmd(a, b) a " - " b "\n"
 #define helpSet(a, b) "    " a " " b "\n"
-#define helpOpt(a) "    " a "\n"
-    sendPhoneFeedback("You can:\n");
+#define helpLn(a) "    " a "\n"
+    sendPhoneFeedback("Available commands:\n");
     sendPhoneFeedback(helpCmd("set", "change a setting") helpSet("message", "<text>") helpSet("permitted_nodes", "<NodeIDs/all>")
                           helpSet("repeat_hours", "<number>") helpSet("expiration_hours", "<number>")
                               helpSet("should_dm_expire", "<true/false>"));
-    sendPhoneFeedback(helpCmd("enable", "begin responding") helpOpt("(everywhere)") helpOpt("dm") helpOpt("channel"));
-    sendPhoneFeedback(helpCmd("disable", "stop responding") helpOpt("(everywhere)") helpOpt("dm") helpOpt("channel"));
+    sendPhoneFeedback(helpLn("enable (everywhere)") helpLn("enable dm") helpLn("enable channel"));
+    sendPhoneFeedback(helpLn("disable (everywhere)") helpLn("disable dm") helpLn("disable channel"));
 #undef helpCmd
 #undef helpSet
-#undef helpOpt
+#undef helpLn
 }
 
 // A DM arrived from the mesh. Maybe send an autoresponse?
