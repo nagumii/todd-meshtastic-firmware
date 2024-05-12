@@ -361,12 +361,14 @@ typedef struct _meshtastic_ModuleConfig_AutoresponderConfig {
     bool enabled_dm;
     /* Sets whether the module responds to messages in channel */
     bool enabled_in_channel;
-    /* How long will Autoresponder wait before responding again to the same node */
-    uint32_t repeat_hours;
+    /* How long will Autoresponder wait before responding again to the same node
+ Int size 16 bytes */
+    uint16_t repeat_hours;
     /* How long until the Autoresponder is automatically disabled
  Mandatory for in-channel responses, with hard-coded maximum
- Optional for DM responses, no enforced maximum */
-    uint32_t expiration_hours;
+ Optional for DM responses, no enforced maximum
+ Int size 16 bytes */
+    uint16_t expiration_hours;
     /* Should expiration_hours also apply to DM responses? */
     bool should_dm_expire;
 } meshtastic_ModuleConfig_AutoresponderConfig;
@@ -816,8 +818,8 @@ X(a, STATIC,   SINGULAR, UINT32,   blue,              5)
 #define meshtastic_ModuleConfig_AutoresponderConfig_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, BOOL,     enabled_dm,        1) \
 X(a, STATIC,   SINGULAR, BOOL,     enabled_in_channel,   2) \
-X(a, STATIC,   SINGULAR, FIXED32,  repeat_hours,      3) \
-X(a, STATIC,   SINGULAR, FIXED32,  expiration_hours,   4) \
+X(a, STATIC,   SINGULAR, UINT32,   repeat_hours,      3) \
+X(a, STATIC,   SINGULAR, UINT32,   expiration_hours,   4) \
 X(a, STATIC,   SINGULAR, BOOL,     should_dm_expire,   5)
 #define meshtastic_ModuleConfig_AutoresponderConfig_CALLBACK NULL
 #define meshtastic_ModuleConfig_AutoresponderConfig_DEFAULT NULL
@@ -870,7 +872,7 @@ extern const pb_msgdesc_t meshtastic_RemoteHardwarePin_msg;
 #define MESHTASTIC_MESHTASTIC_MODULE_CONFIG_PB_H_MAX_SIZE meshtastic_ModuleConfig_size
 #define meshtastic_ModuleConfig_AmbientLightingConfig_size 14
 #define meshtastic_ModuleConfig_AudioConfig_size 19
-#define meshtastic_ModuleConfig_AutoresponderConfig_size 16
+#define meshtastic_ModuleConfig_AutoresponderConfig_size 14
 #define meshtastic_ModuleConfig_CannedMessageConfig_size 49
 #define meshtastic_ModuleConfig_DetectionSensorConfig_size 44
 #define meshtastic_ModuleConfig_ExternalNotificationConfig_size 42
