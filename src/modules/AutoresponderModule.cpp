@@ -329,8 +329,8 @@ void AutoresponderModule::setExpirationHours(uint32_t hours)
 void AutoresponderModule::setShouldDmExpire(bool shouldExpire)
 {
     char feedback[50];
-    if (enabled)
-        sprintf(feedback, "Will stop responding to DMs in %zu hours", arConfig.expiration_hours);
+    if (shouldExpire)
+        sprintf(feedback, "Will stop responding to DMs in %zu hours", max(arConfig.expiration_hours, (uint32_t)1));
     else
         sprintf(feedback, "Will respond to DMs indefinitely");
     sendPhoneFeedback(feedback);
@@ -527,19 +527,21 @@ void AutoresponderModule::bootCounting()
     // Not disabled yet, just log the current count
     if (bootcount < expireAfterBootNum) {
         bootcount++;
-        LOG_DEBUG("Autoresponder: Boot number %zu of %zu before autoresponse is disabled. (in channel", bootcount,
-                  expireAfterBootNum);
-        if (arConfig.enabled_dm && arConfig.should_dm_expire && arConfig.expiration_hours)
-            LOG_DEBUG(" and for DMs");
-        LOG_DEBUG(")\n");
+        LOG_DEBUG("Autoresponder: Boot number %zu of %zu before autoresponse is disabled. ", bootcount, expireAfterBootNum);
+        if (arConfig.enabled_dm && arConfig.enabled_in_channel && arConfig.should_dm_expire)
+            LOG_DEBUG("(DMs will remain active)");
+        LOG_DEBUG("\n");
         saveData<AutoresponderConfig>(&arConfig);
     }
     // Disable if too many boots
     else {
         // This only runs once, because this block cannot be reached once in-channel is disabled
         LOG_WARN("Autoresponder: Booted %zu times since module enabled. Disabling response to prevent "
-                 "mesh flooding.\n",
+                 "mesh flooding. ",
                  bootcount);
+        if (arConfig.enabled_dm && arConfig.enabled_in_channel && arConfig.should_dm_expire)
+            LOG_WARN("(DMs will remain active)");
+        LOG_WARN("\n");
         arConfig.enabled_in_channel = false;
         if (arConfig.should_dm_expire)
             arConfig.enabled_dm = false;
