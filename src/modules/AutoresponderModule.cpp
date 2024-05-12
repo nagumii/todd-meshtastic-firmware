@@ -452,19 +452,21 @@ void AutoresponderModule::bootCounting()
     // Not disabled yet, just log the current count
     if (bootcount < expireAfterBootNum) {
         bootcount++;
-        LOG_DEBUG("Autoresponder: Boot number %zu of %zu before autoresponse is disabled. (in channel", bootcount,
-                  expireAfterBootNum);
-        if (modConfig.enabled_dm && modConfig.should_dm_expire && modConfig.expiration_hours)
-            LOG_DEBUG(" and for DMs");
-        LOG_DEBUG(")\n");
+        LOG_DEBUG("Autoresponder: Boot number %zu of %zu before autoresponse is disabled. ", bootcount, expireAfterBootNum);
+        if (modConfig.enabled_dm && modConfig.enabled_in_channel && modConfig.should_dm_expire && modConfig.expiration_hours)
+            LOG_DEBUG(" (DMs will remain active)");
+        LOG_DEBUG("\n");
         saveOwnConfig();
     }
     // Disable if too many boots
     else {
         // This only runs once, because this block cannot be reached once in-channel is disabled
         LOG_WARN("Autoresponder: Booted %zu times since module enabled. Disabling response to prevent "
-                 "mesh flooding.\n",
+                 "mesh flooding. ",
                  bootcount);
+        if (modConfig.enabled_dm && modConfig.enabled_in_channel && modConfig.should_dm_expire)
+            LOG_WARN("(DMs will remain active)");
+        LOG_WARN("\n");
         modConfig.enabled_in_channel = false;
         if (modConfig.should_dm_expire)
             modConfig.enabled_dm = false;
