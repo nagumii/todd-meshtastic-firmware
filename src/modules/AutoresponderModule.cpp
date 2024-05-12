@@ -267,6 +267,7 @@ void AutoresponderModule::setEnabled(bool enabled)
     sendPhoneFeedback(enabled ? "Enabled for DMs and in channel" : "Fully disabled");
     arConfig.enabled_dm = enabled;
     arConfig.enabled_in_channel = enabled;
+    arConfig.bootcount = 0;
     saveData<AutoresponderConfig>(&arConfig);
     if (enabled)
         reboot();
@@ -277,6 +278,7 @@ void AutoresponderModule::setEnabledDM(bool enabled)
 {
     sendPhoneFeedback(enabled ? "Enabling for DM" : "Disabling for DM");
     arConfig.enabled_dm = enabled;
+    arConfig.bootcount = 0;
     saveData<AutoresponderConfig>(&arConfig);
     reboot();
 }
@@ -286,6 +288,7 @@ void AutoresponderModule::setEnabledChannel(bool enabled)
 {
     sendPhoneFeedback(enabled ? "Enabling in channel" : "Disabling in channel");
     arConfig.enabled_in_channel = enabled;
+    arConfig.bootcount = 0;
     saveData<AutoresponderConfig>(&arConfig);
     reboot();
 }
