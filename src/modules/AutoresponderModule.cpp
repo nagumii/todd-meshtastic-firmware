@@ -4,14 +4,10 @@
 #include "configuration.h"
 #include "mesh/generated/meshtastic/autoresponder.pb.h"
 
-// Fixed limits: Channel
+// Fixed limits
 static constexpr uint8_t maxResponsesChannelDaily = 10; // Max responses per day, in-channel
 static constexpr uint8_t expireAfterBootNum = 5;      // How many boots before response auto-disabled (channel and optionally, DM)
 static constexpr uint16_t cooldownChannelMinutes = 2; // Minimum interval between ANY response in-channel
-
-// Fixed limits: DM
-static constexpr uint32_t repeatDMMinutes = 2; // How long to wait before allowing response to same node - in DM
-// expireAfterBootNum also applies to DM, if autoresponder.should_dm_expire
 
 // Limits on user-config: Channel
 static constexpr uint32_t minRepeatPubChanHours = 8;  // How long to wait before allowing response to same node - public channel
@@ -231,7 +227,7 @@ void AutoresponderModule::handleSetConfigPermittedNodes(const char *rawString)
         // Increment (raw string input)
         r++;
     } while (r < strlen(rawString)); // Stop if we run out of raw string input
-    LOG_DEBUG("\n");                 // Close this log line
+    LOG_DEBUG("\n"); // Close this log line
 
     ownConfig.bootcount_since_enabled = 0; // Reset the boot count
     saveOwnConfig();
@@ -486,8 +482,8 @@ int32_t AutoresponderModule::runOnce()
     static uint32_t prevDailyTasks = 0;
 
     // Determine intervals
-    uint32_t intervalClearDM = MS_IN_MINUTE * repeatDMMinutes;
     uint32_t intervalDailyTasks = MS_IN_MINUTE * 24;
+    uint32_t intervalClearDM = MS_IN_MINUTE * (modConfig.repeat_hours ? modConfig.repeat_hours : 1);
     uint32_t intervalClearChannel =
         MS_IN_MINUTE * max(modConfig.repeat_hours, (isPrimaryPublic() ? minRepeatPubChanHours : minRepeatPrivChanHours));
 
