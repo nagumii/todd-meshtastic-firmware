@@ -35,7 +35,7 @@
 #if !MESHTASTIC_EXCLUDE_WAYPOINT
 #include "modules/WaypointModule.h"
 #endif
-#if !MESHTASTIC_EXCLUDE_AUTORESPONDER
+#if MESHTASTIC_INCLUDE_AUTORESPONDER
 #include "modules/AutoresponderModule.h"
 #endif
 #if ARCH_PORTDUINO
@@ -109,7 +109,7 @@ void setupModules()
 #if !MESHTASTIC_EXCLUDE_REMOTEHARDWARE
         new RemoteHardwareModule();
 #endif
-#if !MESHTASTIC_EXCLUDE_AUTORESPONDER
+#if MESHTASTIC_INCLUDE_AUTORESPONDER
         new AutoresponderModule();
 #endif
         // Example: Put your module here
