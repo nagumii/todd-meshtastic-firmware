@@ -15,8 +15,9 @@ typedef struct _meshtastic_AutoresponderConfig {
     /* How many times the device has booted since module enabled
  Prevents a frequently rebooting node from bypassing rate limits indefinitely
  Always applies to in-channel responses, optionally applies to DMs
- Doesn't count when this protection is not needed */
-    uint32_t bootcount_since_enabled;
+ Doesn't count when this protection is not needed
+ Int size 8 */
+    uint8_t bootcount_since_enabled;
     /* Predefined message, to be sent as an auto-response */
     char response_text[201];
     /* Nodes to which we should respond */
@@ -40,7 +41,7 @@ extern "C" {
 
 /* Struct field encoding specification for nanopb */
 #define meshtastic_AutoresponderConfig_FIELDLIST(X, a) \
-X(a, STATIC,   SINGULAR, FIXED32,  bootcount_since_enabled,   1) \
+X(a, STATIC,   SINGULAR, UINT32,   bootcount_since_enabled,   1) \
 X(a, STATIC,   SINGULAR, STRING,   response_text,     2) \
 X(a, STATIC,   REPEATED, FIXED32,  permitted_nodes,   3)
 #define meshtastic_AutoresponderConfig_CALLBACK NULL
@@ -53,7 +54,7 @@ extern const pb_msgdesc_t meshtastic_AutoresponderConfig_msg;
 
 /* Maximum encoded size of messages (where known) */
 #define MESHTASTIC_MESHTASTIC_AUTORESPONDER_PB_H_MAX_SIZE meshtastic_AutoresponderConfig_size
-#define meshtastic_AutoresponderConfig_size      248
+#define meshtastic_AutoresponderConfig_size      246
 
 #ifdef __cplusplus
 } /* extern "C" */
