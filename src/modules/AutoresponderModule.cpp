@@ -10,9 +10,9 @@ static constexpr uint8_t expireAfterBootNum = 5;      // How many boots before r
 static constexpr uint16_t cooldownChannelMinutes = 2; // Minimum interval between ANY response in-channel
 
 // Limits on user-config: Channel
-static constexpr uint32_t minRepeatPubChanHours = 8;  // How long to wait before allowing response to same node - public channel
-static constexpr uint32_t minRepeatPrivChanHours = 4; // How long to wait before allowing response to same node - private channel
-static constexpr uint32_t maxExpirationChannelHours = 72; // How long before module auto-disables in-channel responses
+static constexpr uint16_t minRepeatPubChanHours = 8;  // How long to wait before allowing response to same node - public channel
+static constexpr uint16_t minRepeatPrivChanHours = 4; // How long to wait before allowing response to same node - private channel
+static constexpr uint16_t maxExpirationChannelHours = 72; // How long before module auto-disables in-channel responses
 
 // The separate config file for this module.
 // Holds data which the phone doesn't need to know,
@@ -447,7 +447,7 @@ void AutoresponderModule::bootCounting()
     if (!modConfig.enabled_in_channel && (!modConfig.enabled_dm || !modConfig.should_dm_expire))
         return;
 
-    uint32_t &bootcount = ownConfig.bootcount_since_enabled; // Shortcut for annoyingly long setting
+    uint8_t &bootcount = ownConfig.bootcount_since_enabled; // Shortcut for annoyingly long setting
 
     // Not disabled yet, just log the current count
     if (bootcount < expireAfterBootNum) {
