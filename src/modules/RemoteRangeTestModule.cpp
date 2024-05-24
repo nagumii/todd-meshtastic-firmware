@@ -32,7 +32,7 @@ ProcessMessage RemoteRangetestModule::handleReceived(const meshtastic_MeshPacket
     // If we like this message, start the test
     if (mp.channel == channelIndex && stringsMatch(text, triggerWord)) {
         LOG_INFO("User asked for a rangetest\n");
-        beginRangeTest(mp.from, channelIndex);
+        beginRangeTest(NODENUM_BROADCAST, channelIndex);
         return ProcessMessage::STOP; // Ignore this message. No rebroadcast, etc
     }
 
@@ -45,17 +45,16 @@ void RemoteRangetestModule::beginRangeTest(uint32_t informNode, ChannelIndex inf
     // Abort: if already running
     if (moduleConfig.range_test.enabled) {
         LOG_INFO("Range test already running\n");
-        sendText("Range test is already running", informViaChannel, informNode);
+        sendText("בדיקת טווח כבר פעילה. לקבלת הודעותh, הדליקו Range Test בהגדרות, עם 0 שניות או 'כבוי' בשדה Interval.", informViaChannel, informNode);
         return;
     }
 
     // Abort: if there was a previous test recently
     if (ranRangeTest && (millis() < intervalMinutes * MS_IN_MINUTE)) {
         LOG_INFO("Too soon for another range test\n");
-        String reply = "Too soon for another range test. ";
-        reply.concat("Try again in ");
+        String reply = "מוקדם מדי לבצע עוד בדיקת טווח. נסה שוב בעוד ";
         reply.concat(intervalMinutes - (millis() / MS_IN_MINUTE));
-        reply.concat(" minutes.");
+        reply.concat(" דקות.");
         sendText(reply.c_str(), informViaChannel, informNode);
         return;
     }
@@ -64,11 +63,9 @@ void RemoteRangetestModule::beginRangeTest(uint32_t informNode, ChannelIndex inf
     // Set the module config, then reboot
 
     LOG_INFO("Looks okay: enabling range test\n");
-    String reply = "About to begin the range test. ";
-    reply.concat("Please enable the range test module in settings. ");
-    reply.concat("The test will run for ");
+    String reply = "מפעיל בדיקת טווח למשך ";
     reply.concat(durationMinutes);
-    reply.concat(" minutes.");
+    reply.concat(" דקות.");
     sendText(reply.c_str(), informViaChannel, informNode);
     moduleConfig.range_test.enabled = true;   // Enable the range test module
     nodeDB->saveToDisk(SEGMENT_MODULECONFIG); // Save this changed config to disk
@@ -95,7 +92,7 @@ int32_t RemoteRangetestModule::runOnce()
     // If the range test module is running, and is due to be disabled
     if (moduleConfig.range_test.enabled) {
         LOG_INFO("Time's up! Disabling range test\n");
-
+        sendText("בדיקת הטווח הסתיימה.", channelIndex);
         moduleConfig.range_test.enabled = false;
         nodeDB->saveToDisk(SEGMENT_MODULECONFIG); // Save this changed config to disk
         return disable();                         // stop the timer
