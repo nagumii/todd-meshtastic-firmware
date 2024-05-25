@@ -30,7 +30,7 @@ ProcessMessage RemoteRangetestModule::handleReceived(const meshtastic_MeshPacket
     char *text = (char *)mp.decoded.payload.bytes;
 
     // If we like this message, start the test
-    if (mp.channel == channelIndex && stringsMatch(text, triggerWord)) {
+    if (mp.channel == channelIndex && stringsMatch(text, triggerWord) && mp.hop_limit - mp.hop_start == 0) {
         LOG_INFO("User asked for a rangetest\n");
         beginRangeTest(NODENUM_BROADCAST, channelIndex);
         return ProcessMessage::STOP; // Ignore this message. No rebroadcast, etc
@@ -45,7 +45,7 @@ void RemoteRangetestModule::beginRangeTest(uint32_t informNode, ChannelIndex inf
     // Abort: if already running
     if (moduleConfig.range_test.enabled) {
         LOG_INFO("Range test already running\n");
-        sendText("בדיקת טווח כבר פעילה. לקבלת הודעותh, הדליקו Range Test בהגדרות, עם 0 שניות או 'כבוי' בשדה Interval.", informViaChannel, informNode);
+        sendText("בדיקת טווח כבר פעילה. לקבלת הודעות, הדליקו Range Test בהגדרות, עם 0 שניות או 'כבוי' בשדה Interval.", informViaChannel, informNode);
         return;
     }
 
@@ -107,7 +107,8 @@ void RemoteRangetestModule::sendText(const char *message, int channelIndex, uint
     meshtastic_MeshPacket *p = router->allocForSending();
     p->to = dest;
     p->channel = channelIndex;
-    p->want_ack = true;
+    p->want_ack = false;
+    p->hop_limit = 0;
     p->decoded.payload.size = strlen(message);
     p->decoded.portnum = meshtastic_PortNum_TEXT_MESSAGE_APP;
     memcpy(p->decoded.payload.bytes, message, p->decoded.payload.size);

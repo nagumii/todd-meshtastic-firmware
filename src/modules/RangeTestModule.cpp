@@ -120,7 +120,7 @@ void RangeTestModuleRadio::sendPayload(NodeNum dest, bool wantReplies)
     packetSequence++;
 
     static char heartbeatString[MAX_RHPACKETLEN];
-    snprintf(heartbeatString, sizeof(heartbeatString), "%u", packetSequence);
+    snprintf(heartbeatString, sizeof(heartbeatString), "מס %u", packetSequence);
 
     p->decoded.payload.size = strlen(heartbeatString); // You must specify how many bytes are in the reply
     memcpy(p->decoded.payload.bytes, heartbeatString, p->decoded.payload.size);

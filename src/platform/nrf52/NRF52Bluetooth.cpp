@@ -231,6 +231,8 @@ void NRF52Bluetooth::setup()
     LOG_INFO("Initialize the Bluefruit nRF52 module\n");
     Bluefruit.autoConnLed(false);
     Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
+    Bluefruit.setTxPower(-40); //{ -40, -20, -16, -12, -8, -4, 0, 2, 3, 4, 5, 6, 7, 8};
+       LOG_INFO("NRF52 bluetooth low power mode\n");
     Bluefruit.begin();
 
     // Clear existing data.
