@@ -15,11 +15,13 @@ RemoteRangetestModule::RemoteRangetestModule()
     : SinglePortModule("RemoteRangeTest", meshtastic_PortNum_TEXT_MESSAGE_APP), concurrency::OSThread("RemoteRangeTest")
 {
     // If range test enabled
-    if (moduleConfig.range_test.enabled) {
+    if (moduleConfig.range_test.enabled)
+    {
         ranRangeTest = true;                         // Impose the rate-limiting interval
         setInterval(durationMinutes * MS_IN_MINUTE); // Set timer to disable range test
         LOG_INFO("Will disable range test in %i minutes\n", durationMinutes);
-    } else
+    }
+    else
         disable(); // No timer
 }
 
@@ -31,10 +33,11 @@ ProcessMessage RemoteRangetestModule::handleReceived(const meshtastic_MeshPacket
 
     // If we like this message, start the test
 
-    if (stringsMatch(text, triggerWord) && mp.to == myNodeInfo.my_node_num) {
+    if (stringsMatch(text, triggerWord) && mp.to == myNodeInfo.my_node_num)
+    {
         LOG_INFO("User asked for a rangetest\n");
-        beginRangeTest(NODENUM_BROADCAST, channelIndex);
-        return ProcessMessage::STOP; // Ignore this message. No rebroadcast, etc
+        beginRangeTest(mp.from, channelIndex);
+        return ProcessMessage::CONTINUE; // Ignore this message. No rebroadcast, etc
     }
 
     return ProcessMessage::CONTINUE; // We weren't interested in this message, treat it as nomal
@@ -44,19 +47,21 @@ ProcessMessage RemoteRangetestModule::handleReceived(const meshtastic_MeshPacket
 void RemoteRangetestModule::beginRangeTest(uint32_t informNode, ChannelIndex informViaChannel)
 {
     // Abort: if already running
-    if (moduleConfig.range_test.enabled) {
+    if (moduleConfig.range_test.enabled)
+    {
         LOG_INFO("Range test already running\n");
         sendText("בדיקת טווח כבר פעילה. לקבלת הודעות, הדליקו Range Test בהגדרות, עם 0 שניות או 'כבוי' בשדה Interval.", informViaChannel);
         return;
     }
 
     // Abort: if there was a previous test recently
-    if (ranRangeTest && (millis() < intervalMinutes * MS_IN_MINUTE)) {
+    if (ranRangeTest && (millis() < intervalMinutes * MS_IN_MINUTE))
+    {
         LOG_INFO("Too soon for another range test\n");
         String reply = "מוקדם מדי לבצע עוד בדיקת טווח. נסה שוב בעוד ";
         reply.concat(intervalMinutes - (millis() / MS_IN_MINUTE));
         reply.concat(" דקות.");
-        sendText(reply.c_str(), informViaChannel, informNode);
+        sendText(reply.c_str(), informViaChannel, NODENUM_BROADCAST);
         return;
     }
 
@@ -64,11 +69,20 @@ void RemoteRangetestModule::beginRangeTest(uint32_t informNode, ChannelIndex inf
     // Set the module config, then reboot
 
     LOG_INFO("Looks okay: enabling range test\n");
-    String reply = nodeDB->getMeshNode(informNode)->user.long_name;
+    LOG_INFO("INFORMNODE: %i\n", informNode);
+
+    meshtastic_NodeInfoLite *node = nodeDB->getMeshNode(informNode); // Save typing
+
+    String reply;
+    if (node && node->has_user && strlen(node->user.long_name) > 0) // get long nodename or if not present in nodedb, just output the nodenum
+        reply.concat(node->user.long_name);
+    else
+        reply.concat(informNode);
+
     reply.concat(": מפעיל בדיקת טווח למשך ");
     reply.concat(durationMinutes);
     reply.concat(" דקות.");
-    sendText(reply.c_str(), informViaChannel, informNode);
+    sendText(reply.c_str(), informViaChannel);
     moduleConfig.range_test.enabled = true;   // Enable the range test module
     nodeDB->saveToDisk(SEGMENT_MODULECONFIG); // Save this changed config to disk
 
@@ -82,7 +96,8 @@ void RemoteRangetestModule::beginRangeTest(uint32_t informNode, ChannelIndex inf
 int32_t RemoteRangetestModule::runOnce()
 {
     // If we've enabled the range test module, and are just waiting to reboot to apply the changes
-    if (waitingToReboot) {
+    if (waitingToReboot)
+    {
         // Reboot (platform specific)
 #if defined(ARCH_ESP32)
         ESP.restart();
@@ -92,7 +107,8 @@ int32_t RemoteRangetestModule::runOnce()
     }
 
     // If the range test module is running, and is due to be disabled
-    if (moduleConfig.range_test.enabled) {
+    if (moduleConfig.range_test.enabled)
+    {
         LOG_INFO("Time's up! Disabling range test\n");
         sendText("בדיקת הטווח הסתיימה.", channelIndex);
         moduleConfig.range_test.enabled = false;
@@ -128,7 +144,8 @@ bool RemoteRangetestModule::stringsMatch(const char *s1, const char *s2, bool ca
         return false;
 
     // Compare character by character (possible case-insensitive)
-    for (uint16_t i = 0; i <= strlen(s1); i++) {
+    for (uint16_t i = 0; i <= strlen(s1); i++)
+    {
         if (caseSensitive && s1[i] != s2[i])
             return false;
         if (!caseSensitive && tolower(s1[i]) != tolower(s2[i]))
