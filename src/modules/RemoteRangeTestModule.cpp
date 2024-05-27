@@ -30,7 +30,8 @@ ProcessMessage RemoteRangetestModule::handleReceived(const meshtastic_MeshPacket
     char *text = (char *)mp.decoded.payload.bytes;
 
     // If we like this message, start the test
-    if (mp.channel == channelIndex && stringsMatch(text, triggerWord) && mp.hop_limit - mp.hop_start == 0) {
+
+    if (stringsMatch(text, triggerWord) && mp.to == myNodeInfo.my_node_num) {
         LOG_INFO("User asked for a rangetest\n");
         beginRangeTest(NODENUM_BROADCAST, channelIndex);
         return ProcessMessage::STOP; // Ignore this message. No rebroadcast, etc
@@ -45,7 +46,7 @@ void RemoteRangetestModule::beginRangeTest(uint32_t informNode, ChannelIndex inf
     // Abort: if already running
     if (moduleConfig.range_test.enabled) {
         LOG_INFO("Range test already running\n");
-        sendText("בדיקת טווח כבר פעילה. לקבלת הודעות, הדליקו Range Test בהגדרות, עם 0 שניות או 'כבוי' בשדה Interval.", informViaChannel, informNode);
+        sendText("בדיקת טווח כבר פעילה. לקבלת הודעות, הדליקו Range Test בהגדרות, עם 0 שניות או 'כבוי' בשדה Interval.", informViaChannel);
         return;
     }
 
@@ -63,7 +64,8 @@ void RemoteRangetestModule::beginRangeTest(uint32_t informNode, ChannelIndex inf
     // Set the module config, then reboot
 
     LOG_INFO("Looks okay: enabling range test\n");
-    String reply = "מפעיל בדיקת טווח למשך ";
+    String reply = nodeDB->getMeshNode(informNode)->user.long_name;
+    reply.concat(": מפעיל בדיקת טווח למשך ");
     reply.concat(durationMinutes);
     reply.concat(" דקות.");
     sendText(reply.c_str(), informViaChannel, informNode);
