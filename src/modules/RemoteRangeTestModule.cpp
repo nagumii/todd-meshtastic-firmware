@@ -32,13 +32,25 @@ ProcessMessage RemoteRangetestModule::handleReceived(const meshtastic_MeshPacket
     char *text = (char *)mp.decoded.payload.bytes;
 
     // If we like this message, start the test
+    LOG_INFO("Comparing %i\n", triggerWord);
+    LOG_INFO("Comparing %i\n", text);
+    LOG_INFO("My node is %i\n", myNodeInfo.my_node_num);
+    LOG_INFO("And this was sent to %i\n", mp.to);
 
-    if (stringsMatch(text, triggerWord) && mp.to == myNodeInfo.my_node_num)
+    if (stringsMatch(text, triggerWord))
+    {
+        LOG_INFO("strings match!!");
+    };
+    if (mp.to == myNodeInfo.my_node_num)
+    {
+        LOG_INFO("sender matches!!");
+    };
+   /* if (stringsMatch(text, triggerWord) && mp.to == myNodeInfo.my_node_num)
     {
         LOG_INFO("User asked for a rangetest\n");
         beginRangeTest(mp.from, channelIndex);
-        return ProcessMessage::CONTINUE; // Ignore this message. No rebroadcast, etc
-    }
+        return ProcessMessage::CONTINUE;
+    }*/
 
     return ProcessMessage::CONTINUE; // We weren't interested in this message, treat it as nomal
 }
@@ -46,19 +58,32 @@ ProcessMessage RemoteRangetestModule::handleReceived(const meshtastic_MeshPacket
 // Check if it's appropriate, then run range test
 void RemoteRangetestModule::beginRangeTest(uint32_t informNode, ChannelIndex informViaChannel)
 {
+    meshtastic_NodeInfoLite *node = nodeDB->getMeshNode(informNode); // Save typing
+
+    String nodeName; // get short nodename or if not present in nodedb, just output the nodenum
+    if (node && node->has_user && strlen(node->user.short_name) > 0)
+        nodeName.concat(node->user.short_name);
+    else
+        nodeName.concat(informNode);
+
     // Abort: if already running
     if (moduleConfig.range_test.enabled)
     {
-        LOG_INFO("Range test already running\n");
-        sendText("בדיקת טווח כבר פעילה. לקבלת הודעות, הדליקו Range Test בהגדרות, עם 0 שניות או 'כבוי' בשדה Interval.", informViaChannel);
+        LOG_INFO("Remote range test already running\n");
+
+        String reply = nodeName;
+        reply.concat(":\nבדיקת טווח כבר פעילה. לקבלת הודעות, הדליקו ריינג' טסט בהגדרות, עם אפס שניות או 'כבוי' בשדה אינטרוול.");
+        sendText(reply.c_str(), informViaChannel);
         return;
     }
 
     // Abort: if there was a previous test recently
     if (ranRangeTest && (millis() < intervalMinutes * MS_IN_MINUTE))
     {
-        LOG_INFO("Too soon for another range test\n");
-        String reply = "מוקדם מדי לבצע עוד בדיקת טווח. נסה שוב בעוד ";
+        LOG_INFO("Too soon for another remote range test\n");
+
+        String reply = nodeName;
+        reply.concat(":\nמוקדם מדי לבצע עוד בדיקת טווח. נסו שוב בעוד ");
         reply.concat(intervalMinutes - (millis() / MS_IN_MINUTE));
         reply.concat(" דקות.");
         sendText(reply.c_str(), informViaChannel, NODENUM_BROADCAST);
@@ -68,18 +93,11 @@ void RemoteRangetestModule::beginRangeTest(uint32_t informNode, ChannelIndex inf
     // Looks okay to start range test
     // Set the module config, then reboot
 
-    LOG_INFO("Looks okay: enabling range test\n");
+    LOG_INFO("Looks okay: enabling remote range test\n");
     LOG_INFO("INFORMNODE: %i\n", informNode);
 
-    meshtastic_NodeInfoLite *node = nodeDB->getMeshNode(informNode); // Save typing
-
-    String reply;
-    if (node && node->has_user && strlen(node->user.long_name) > 0) // get long nodename or if not present in nodedb, just output the nodenum
-        reply.concat(node->user.long_name);
-    else
-        reply.concat(informNode);
-
-    reply.concat(": מפעיל בדיקת טווח למשך ");
+    String reply = nodeName;
+    reply.concat(":\nמפעיל בדיקת טווח למשך ");
     reply.concat(durationMinutes);
     reply.concat(" דקות.");
     sendText(reply.c_str(), informViaChannel);
@@ -109,7 +127,7 @@ int32_t RemoteRangetestModule::runOnce()
     // If the range test module is running, and is due to be disabled
     if (moduleConfig.range_test.enabled)
     {
-        LOG_INFO("Time's up! Disabling range test\n");
+        LOG_INFO("Time's up! Disabling remote range test\n");
         sendText("בדיקת הטווח הסתיימה.", channelIndex);
         moduleConfig.range_test.enabled = false;
         nodeDB->saveToDisk(SEGMENT_MODULECONFIG); // Save this changed config to disk
