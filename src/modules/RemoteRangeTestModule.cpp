@@ -32,25 +32,25 @@ ProcessMessage RemoteRangetestModule::handleReceived(const meshtastic_MeshPacket
     char *text = (char *)mp.decoded.payload.bytes;
 
     // If we like this message, start the test
-    LOG_INFO("Comparing %i\n", triggerWord);
-    LOG_INFO("Comparing %i\n", text);
+    LOG_INFO("Comparing %s\n", triggerWord);
+    LOG_INFO("Comparing %s\n", text);
     LOG_INFO("My node is %i\n", myNodeInfo.my_node_num);
     LOG_INFO("And this was sent to %i\n", mp.to);
 
     if (stringsMatch(text, triggerWord))
     {
-        LOG_INFO("strings match!!");
+        LOG_INFO("strings match!!\n");
     };
     if (mp.to == myNodeInfo.my_node_num)
     {
-        LOG_INFO("sender matches!!");
+        LOG_INFO("sender matches!!\n");
     };
-   /* if (stringsMatch(text, triggerWord) && mp.to == myNodeInfo.my_node_num)
+    if (stringsMatch(text, triggerWord) && mp.to == myNodeInfo.my_node_num)
     {
         LOG_INFO("User asked for a rangetest\n");
         beginRangeTest(mp.from, channelIndex);
         return ProcessMessage::CONTINUE;
-    }*/
+    }
 
     return ProcessMessage::CONTINUE; // We weren't interested in this message, treat it as nomal
 }
@@ -72,7 +72,7 @@ void RemoteRangetestModule::beginRangeTest(uint32_t informNode, ChannelIndex inf
         LOG_INFO("Remote range test already running\n");
 
         String reply = nodeName;
-        reply.concat(":\nבדיקת טווח כבר פעילה. לקבלת הודעות, הדליקו ריינג' טסט בהגדרות, עם אפס שניות או 'כבוי' בשדה אינטרוול.");
+        reply.concat(": Range test running. Turn on in settings, with 0secs or off as interval.");
         sendText(reply.c_str(), informViaChannel);
         return;
     }
@@ -83,9 +83,9 @@ void RemoteRangetestModule::beginRangeTest(uint32_t informNode, ChannelIndex inf
         LOG_INFO("Too soon for another remote range test\n");
 
         String reply = nodeName;
-        reply.concat(":\nמוקדם מדי לבצע עוד בדיקת טווח. נסו שוב בעוד ");
+        reply.concat(": Too soon for a new range test. Try again in ");
         reply.concat(intervalMinutes - (millis() / MS_IN_MINUTE));
-        reply.concat(" דקות.");
+        reply.concat(" mins.");
         sendText(reply.c_str(), informViaChannel, NODENUM_BROADCAST);
         return;
     }
@@ -97,9 +97,9 @@ void RemoteRangetestModule::beginRangeTest(uint32_t informNode, ChannelIndex inf
     LOG_INFO("INFORMNODE: %i\n", informNode);
 
     String reply = nodeName;
-    reply.concat(":\nמפעיל בדיקת טווח למשך ");
+    reply.concat(": Activating ");
     reply.concat(durationMinutes);
-    reply.concat(" דקות.");
+    reply.concat(" min range test.");
     sendText(reply.c_str(), informViaChannel);
     moduleConfig.range_test.enabled = true;   // Enable the range test module
     nodeDB->saveToDisk(SEGMENT_MODULECONFIG); // Save this changed config to disk
@@ -128,7 +128,7 @@ int32_t RemoteRangetestModule::runOnce()
     if (moduleConfig.range_test.enabled)
     {
         LOG_INFO("Time's up! Disabling remote range test\n");
-        sendText("בדיקת הטווח הסתיימה.", channelIndex);
+        sendText("Range test complete.", channelIndex);
         moduleConfig.range_test.enabled = false;
         nodeDB->saveToDisk(SEGMENT_MODULECONFIG); // Save this changed config to disk
         return disable();                         // stop the timer
@@ -144,7 +144,7 @@ void RemoteRangetestModule::sendText(const char *message, int channelIndex, uint
     p->to = dest;
     p->channel = channelIndex;
     p->want_ack = false;
-    p->hop_limit = 0;
+    p->hop_limit = 3;
     p->decoded.payload.size = strlen(message);
     p->decoded.portnum = meshtastic_PortNum_TEXT_MESSAGE_APP;
     memcpy(p->decoded.payload.bytes, message, p->decoded.payload.size);
