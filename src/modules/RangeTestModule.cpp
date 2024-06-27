@@ -49,25 +49,33 @@ int32_t RangeTestModule::runOnce()
 
     uint32_t senderHeartbeat = moduleConfig.range_test.sender * 1000;
 
-    if (moduleConfig.range_test.enabled) {
+    if (moduleConfig.range_test.enabled)
+    {
 
-        if (firstTime) {
+        if (firstTime)
+        {
             rangeTestModuleRadio = new RangeTestModuleRadio();
 
             firstTime = 0;
 
-            if (moduleConfig.range_test.sender) {
+            if (moduleConfig.range_test.sender)
+            {
                 LOG_INFO("Initializing Range Test Module -- Sender\n");
                 started = millis(); // make a note of when we started
                 return (5000);      // Sending first message 5 seconds after initialization.
-            } else {
+            }
+            else
+            {
                 LOG_INFO("Initializing Range Test Module -- Receiver\n");
                 return disable();
                 // This thread does not need to run as a receiver
             }
-        } else {
+        }
+        else
+        {
 
-            if (moduleConfig.range_test.sender) {
+            if (moduleConfig.range_test.sender)
+            {
                 // If sender
                 LOG_INFO("Range Test Module - Sending heartbeat every %d ms\n", (senderHeartbeat));
 
@@ -78,23 +86,31 @@ int32_t RangeTestModule::runOnce()
                 LOG_INFO("fixed_position()             %d\n", config.position.fixed_position);
 
                 // Only send packets if the channel is less than 25% utilized.
-                if (airTime->isTxAllowedChannelUtil(true)) {
+                if (airTime->isTxAllowedChannelUtil(true))
+                {
                     rangeTestModuleRadio->sendPayload();
                 }
 
                 // If we have been running for more than 8 hours, turn module back off
-                if (millis() - started > 28800000) {
+                if (millis() - started > 28800000)
+                {
                     LOG_INFO("Range Test Module - Disabling after 8 hours\n");
                     return disable();
-                } else {
+                }
+                else
+                {
                     return (senderHeartbeat);
                 }
-            } else {
+            }
+            else
+            {
                 return disable();
                 // This thread does not need to run as a receiver
             }
         }
-    } else {
+    }
+    else
+    {
         LOG_INFO("Range Test Module - Disabled\n");
     }
 
@@ -115,12 +131,11 @@ void RangeTestModuleRadio::sendPayload(NodeNum dest, bool wantReplies)
     p->decoded.want_response = wantReplies;
     p->hop_limit = 0;
     p->want_ack = false;
-    p->channel = 2;
 
     packetSequence++;
 
     static char heartbeatString[MAX_RHPACKETLEN];
-    snprintf(heartbeatString, sizeof(heartbeatString), "#%u", packetSequence);
+    snprintf(heartbeatString, sizeof(heartbeatString), "seq %u", packetSequence);
 
     p->decoded.payload.size = strlen(heartbeatString); // You must specify how many bytes are in the reply
     memcpy(p->decoded.payload.bytes, heartbeatString, p->decoded.payload.size);
@@ -135,7 +150,8 @@ ProcessMessage RangeTestModuleRadio::handleReceived(const meshtastic_MeshPacket 
 {
 #if defined(ARCH_ESP32) || defined(ARCH_NRF52)
 
-    if (moduleConfig.range_test.enabled) {
+    if (moduleConfig.range_test.enabled)
+    {
 
         /*
             auto &p = mp.decoded;
@@ -143,9 +159,11 @@ ProcessMessage RangeTestModuleRadio::handleReceived(const meshtastic_MeshPacket 
                   LOG_INFO.getNodeNum(), mp.from, mp.to, mp.id, p.payload.size, p.payload.bytes);
         */
 
-        if (getFrom(&mp) != nodeDB->getNodeNum()) {
+        if (getFrom(&mp) != nodeDB->getNodeNum())
+        {
 
-            if (moduleConfig.range_test.save) {
+            if (moduleConfig.range_test.save)
+            {
                 appendFile(mp);
             }
 
@@ -175,7 +193,9 @@ ProcessMessage RangeTestModuleRadio::handleReceived(const meshtastic_MeshPacket 
             LOG_DEBUG("-----------------------------------------\n");
             */
         }
-    } else {
+    }
+    else
+    {
         LOG_INFO("Range Test Module Disabled\n");
     }
 
@@ -213,12 +233,14 @@ bool RangeTestModuleRadio::appendFile(const meshtastic_MeshPacket &mp)
         LOG_DEBUG("gpsStatus->getDOP()          %d\n", gpsStatus->getDOP());
         LOG_DEBUG("-----------------------------------------\n");
     */
-    if (!FSBegin()) {
+    if (!FSBegin())
+    {
         LOG_DEBUG("An Error has occurred while mounting the filesystem\n");
         return 0;
     }
 
-    if (FSCom.totalBytes() - FSCom.usedBytes() < 51200) {
+    if (FSCom.totalBytes() - FSCom.usedBytes() < 51200)
+    {
         LOG_DEBUG("Filesystem doesn't have enough free space. Aborting write.\n");
         return 0;
     }
@@ -226,20 +248,25 @@ bool RangeTestModuleRadio::appendFile(const meshtastic_MeshPacket &mp)
     FSCom.mkdir("/static");
 
     // If the file doesn't exist, write the header.
-    if (!FSCom.exists("/static/rangetest.csv")) {
+    if (!FSCom.exists("/static/rangetest.csv"))
+    {
         //--------- Write to file
         File fileToWrite = FSCom.open("/static/rangetest.csv", FILE_WRITE);
 
-        if (!fileToWrite) {
+        if (!fileToWrite)
+        {
             LOG_ERROR("There was an error opening the file for writing\n");
             return 0;
         }
 
         // Print the CSV header
         if (fileToWrite.println(
-                "time,from,sender name,sender lat,sender long,rx lat,rx long,rx elevation,rx snr,distance,hop limit,payload")) {
+                "time,from,sender name,sender lat,sender long,rx lat,rx long,rx elevation,rx snr,distance,hop limit,payload"))
+        {
             LOG_INFO("File was written\n");
-        } else {
+        }
+        else
+        {
             LOG_ERROR("File write failed\n");
         }
         fileToWrite.flush();
@@ -249,13 +276,15 @@ bool RangeTestModuleRadio::appendFile(const meshtastic_MeshPacket &mp)
     //--------- Append content to file
     File fileToAppend = FSCom.open("/static/rangetest.csv", FILE_APPEND);
 
-    if (!fileToAppend) {
+    if (!fileToAppend)
+    {
         LOG_ERROR("There was an error opening the file for appending\n");
         return 0;
     }
 
     struct timeval tv;
-    if (!gettimeofday(&tv, NULL)) {
+    if (!gettimeofday(&tv, NULL))
+    {
         long hms = tv.tv_sec % SEC_PER_DAY;
         hms = (hms + SEC_PER_DAY) % SEC_PER_DAY;
 
@@ -265,7 +294,9 @@ bool RangeTestModuleRadio::appendFile(const meshtastic_MeshPacket &mp)
         int sec = (hms % SEC_PER_HOUR) % SEC_PER_MIN; // or hms % SEC_PER_MIN
 
         fileToAppend.printf("%02d:%02d:%02d,", hour, min, sec); // Time
-    } else {
+    }
+    else
+    {
         fileToAppend.printf("??:??:??,"); // Time
     }
 
@@ -279,11 +310,14 @@ bool RangeTestModuleRadio::appendFile(const meshtastic_MeshPacket &mp)
 
     fileToAppend.printf("%f,", mp.rx_snr); // RX SNR
 
-    if (n->position.latitude_i && n->position.longitude_i && gpsStatus->getLatitude() && gpsStatus->getLongitude()) {
+    if (n->position.latitude_i && n->position.longitude_i && gpsStatus->getLatitude() && gpsStatus->getLongitude())
+    {
         float distance = GeoCoord::latLongToMeter(n->position.latitude_i * 1e-7, n->position.longitude_i * 1e-7,
                                                   gpsStatus->getLatitude() * 1e-7, gpsStatus->getLongitude() * 1e-7);
         fileToAppend.printf("%f,", distance); // Distance in meters
-    } else {
+    }
+    else
+    {
         fileToAppend.printf("0,");
     }
 

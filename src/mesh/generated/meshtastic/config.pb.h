@@ -72,7 +72,7 @@ typedef enum _meshtastic_Config_DeviceConfig_RebroadcastMode {
     /* Ignores observed messages from foreign meshes that are open or those which it cannot decrypt.
  Only rebroadcasts message on the nodes local primary / secondary channels. */
     meshtastic_Config_DeviceConfig_RebroadcastMode_LOCAL_ONLY = 2,
-    /* Ignores observed messages from foreign meshes like LOCAL_ONLY,
+    /* git remote -vs observed messages from foreign meshes like LOCAL_ONLY,
  but takes it step further by also ignoring messages from nodenums not in the node's known list (NodeDB) */
     meshtastic_Config_DeviceConfig_RebroadcastMode_KNOWN_ONLY = 3
 } meshtastic_Config_DeviceConfig_RebroadcastMode;
