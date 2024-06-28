@@ -37,6 +37,15 @@ ProcessMessage RemoteRangetestModule::handleReceived(const meshtastic_MeshPacket
     LOG_INFO("My node is %i\n", myNodeInfo.my_node_num);
     LOG_INFO("And this was sent to %i\n", mp.to);
 
+    if (stringsMatch(text, "SNR"))
+    {
+        LOG_INFO("SNR requested: %.1f SNR, %i hops (%i - %i)\n", mp.rx_snr, mp.hop_start - mp.hop_limit, mp.hop_start, mp.hop_limit);
+        LOG_INFO("Sending SNR to: %u\n", mp.from);
+        char message[20];
+        snprintf(message, sizeof(message), "%.1f/%i", mp.rx_snr, mp.hop_start - mp.hop_limit);
+        sendText(message, mp.channel, mp.from);
+    };
+
     if (stringsMatch(text, triggerWord))
     {
         LOG_INFO("strings match!!\n");
@@ -144,7 +153,7 @@ void RemoteRangetestModule::sendText(const char *message, int channelIndex, uint
     p->to = dest;
     p->channel = channelIndex;
     p->want_ack = false;
-    p->hop_limit = 3;
+    //  p->hop_limit = 3;
     p->decoded.payload.size = strlen(message);
     p->decoded.portnum = meshtastic_PortNum_TEXT_MESSAGE_APP;
     memcpy(p->decoded.payload.bytes, message, p->decoded.payload.size);
